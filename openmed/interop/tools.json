@@ -420,7 +420,8 @@
                         "replace",
                         "mask",
                         "hash",
-                        "format_preserve"
+                        "format_preserve",
+                        "shift"
                       ],
                       "type": "string"
                     },
@@ -2436,7 +2437,8 @@
                     "replace",
                     "mask",
                     "hash",
-                    "format_preserve"
+                    "format_preserve",
+                    "shift"
                   ],
                   "type": "string"
                 },
@@ -2804,7 +2806,8 @@
                     "replace",
                     "mask",
                     "hash",
-                    "format_preserve"
+                    "format_preserve",
+                    "shift"
                   ],
                   "type": "string"
                 },
@@ -3443,7 +3446,8 @@
                     "replace",
                     "mask",
                     "hash",
-                    "format_preserve"
+                    "format_preserve",
+                    "shift"
                   ],
                   "type": "string"
                 },
@@ -3825,7 +3829,8 @@
                     "replace",
                     "mask",
                     "hash",
-                    "format_preserve"
+                    "format_preserve",
+                    "shift"
                   ],
                   "type": "string"
                 },
@@ -8135,7 +8140,8 @@
                     "replace",
                     "mask",
                     "hash",
-                    "format_preserve"
+                    "format_preserve",
+                    "shift"
                   ],
                   "type": "string"
                 },
@@ -8499,7 +8505,8 @@
                     "replace",
                     "mask",
                     "hash",
-                    "format_preserve"
+                    "format_preserve",
+                    "shift"
                   ],
                   "type": "string"
                 },

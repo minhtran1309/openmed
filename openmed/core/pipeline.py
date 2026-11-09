@@ -411,6 +411,10 @@ class Pipeline:
         data_use_action: DataUseAction | str = "process",
         budget: Optional[RequestBudget] = None,
     ) -> PipelineResult:
+        if locale is None and self.policy is not None:
+            # A profile may imply a locale (e.g. ``ccia_l*`` -> ``en_AU``) so
+            # selecting it cannot be combined with a missing locale.
+            locale = self.policy.implied_locale
         resolved_budget = coerce_budget(budget)
         budget_clock = resolved_budget.start() if resolved_budget is not None else None
         if budget_clock is not None:

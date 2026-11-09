@@ -26,6 +26,7 @@ ACTION_STRENGTH_ORDER: tuple[str, ...] = (
     "keep",
     "format_preserve",
     "replace",
+    "shift",
     "hash",
     "mask",
     "redact",

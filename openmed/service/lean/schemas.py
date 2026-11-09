@@ -48,6 +48,15 @@ class ProvenanceResponse(BaseModel):
     policies: dict[str, str]
 
 
+class PolicyCoverageResponse(BaseModel):
+    """Response of ``GET /v1/policies/{name}/coverage``."""
+
+    model_config = ConfigDict(extra="forbid")
+    covered_labels: list[str]
+    coverage_percent: float
+    fingerprint: str
+
+
 class ErrorResponse(BaseModel):
     """Body of every non-200 response."""
 
@@ -77,3 +86,4 @@ def get_schema(name: str) -> dict[str, Any] | None:
 register_schema("health_response", HealthResponse)
 register_schema("provenance_response", ProvenanceResponse)
 register_schema("error_response", ErrorResponse)
+register_schema("policy_coverage_response", PolicyCoverageResponse)

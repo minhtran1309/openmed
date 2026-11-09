@@ -44,6 +44,9 @@ class PolicyName(str, Enum):
     INDIA_HEALTH_ID = "india_health_id"
     EG_PDPL = "eg_pdpl"
     MA_LAW_09_08 = "ma_law_09_08"
+    CCIA_L1 = "ccia_l1"
+    CCIA_L2 = "ccia_l2"
+    CCIA_L3 = "ccia_l3"
 
 
 CANONICAL_POLICY_NAMES = tuple(policy.value for policy in PolicyName)
@@ -80,6 +83,7 @@ class PolicyProfile:
     policy_label_actions: Mapping[str, str] = field(default_factory=dict)
     strict_no_leak: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    implied_locale: str | None = None
 
     def action_for(self, label: str, *, lang: str = "en") -> str:
         """Return the action configured for a canonical or source label."""
@@ -98,7 +102,7 @@ class PolicyProfile:
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-compatible representation of the loaded profile."""
 
-        return {
+        payload: dict[str, Any] = {
             "schema_version": self.schema_version,
             "name": self.name,
             "posture": self.posture,
@@ -115,6 +119,11 @@ class PolicyProfile:
             "policy_label_actions": dict(self.policy_label_actions),
             "metadata": dict(self.metadata),
         }
+        # Emitted only when set so profiles without an implied locale keep
+        # their existing serialized form (and fingerprint).
+        if self.implied_locale is not None:
+            payload["implied_locale"] = self.implied_locale
+        return payload
 
     def derive(
         self,
@@ -785,6 +794,7 @@ def _profile_from_mapping(payload: Mapping[str, Any], *, source: str) -> PolicyP
             "source": Path(source).name,
             **dict(payload.get("metadata") or {}),
         },
+        implied_locale=_optional_locale(payload.get("implied_locale")),
     )
 
 
@@ -792,6 +802,12 @@ def _positive_int(value: Any, field_name: str) -> int:
     if not isinstance(value, int) or value < 1:
         raise ValueError(f"{field_name} must be a positive integer")
     return value
+
+
+def _optional_locale(value: Any) -> str | None:
+    if value is None:
+        return None
+    return _non_empty_str(value, "implied_locale")
 
 
 def _non_empty_str(value: Any, field_name: str) -> str:

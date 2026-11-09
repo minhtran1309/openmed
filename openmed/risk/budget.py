@@ -1130,6 +1130,23 @@ DEFAULT_POLICY_BUDGETS: Mapping[str, RiskBudget] = {
         max_surviving_direct_ids=0,
         max_singleton_records=0,
     ),
+    # ccia_l* budgets mirror each level's nearest stock profile.
+    "ccia_l1": RiskBudget(
+        name="ccia_l1",
+        max_residual_qi_weight=10.0,
+        max_surviving_direct_ids=0,
+    ),
+    "ccia_l2": RiskBudget(
+        name="ccia_l2",
+        max_residual_qi_weight=8.0,
+        max_surviving_direct_ids=0,
+    ),
+    "ccia_l3": RiskBudget(
+        name="ccia_l3",
+        max_residual_qi_weight=4.0,
+        max_surviving_direct_ids=0,
+        max_singleton_records=0,
+    ),
 }
 
 if set(DEFAULT_POLICY_BUDGETS) != set(CANONICAL_POLICY_NAMES):

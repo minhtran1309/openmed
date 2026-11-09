@@ -35,6 +35,7 @@ ACTION_VALUES = (
     "mask",
     "hash",
     ACTION_FORMAT_PRESERVE,
+    "shift",
 )
 _TEXT_HASH_RE = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
 

@@ -79,6 +79,7 @@ def test_simulation_classifies_actions_counts_and_blocking_changes() -> None:
             "mask": 1,
             "hash": 0,
             "format_preserve": 0,
+            "shift": 0,
         },
         "candidate": {
             "keep": 0,
@@ -87,6 +88,7 @@ def test_simulation_classifies_actions_counts_and_blocking_changes() -> None:
             "mask": 2,
             "hash": 0,
             "format_preserve": 0,
+            "shift": 0,
         },
         "delta": {
             "keep": -2,
@@ -95,6 +97,7 @@ def test_simulation_classifies_actions_counts_and_blocking_changes() -> None:
             "mask": 1,
             "hash": 0,
             "format_preserve": 0,
+            "shift": 0,
         },
     }
     assert summary["count_change"]["affected"] == "increased"
