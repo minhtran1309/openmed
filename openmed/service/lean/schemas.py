@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
 
 from .errors import ERROR_CODES
 
@@ -57,6 +57,48 @@ class PolicyCoverageResponse(BaseModel):
     fingerprint: str
 
 
+class DetectSegment(BaseModel):
+    """One segment of a ``POST /v1/detect`` request."""
+
+    model_config = ConfigDict(extra="forbid")
+    segment_id: StrictStr = Field(min_length=1)
+    text: StrictStr
+
+
+class DetectRequest(BaseModel):
+    """Request of ``POST /v1/detect``.
+
+    ``preserve_whitespace`` controls whether detectors see the segment text
+    verbatim (``True``) or stripped. Offsets always index the text sent.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    segments: list[DetectSegment]
+    policy: StrictStr
+    preserve_whitespace: StrictBool = True
+
+
+class DetectFinding(BaseModel):
+    """One detected span. Carries offsets and labels only, never span text."""
+
+    model_config = ConfigDict(extra="forbid")
+    segment_id: str
+    start: int
+    end: int
+    label: str
+    subtype: str | None = None
+    score: float
+    policy_class: str
+
+
+class DetectResponse(BaseModel):
+    """Response of ``POST /v1/detect``."""
+
+    model_config = ConfigDict(extra="forbid")
+    findings: list[DetectFinding]
+    provenance: ProvenanceResponse
+
+
 class ErrorResponse(BaseModel):
     """Body of every non-200 response."""
 
@@ -87,3 +129,5 @@ register_schema("health_response", HealthResponse)
 register_schema("provenance_response", ProvenanceResponse)
 register_schema("error_response", ErrorResponse)
 register_schema("policy_coverage_response", PolicyCoverageResponse)
+register_schema("detect_request", DetectRequest)
+register_schema("detect_response", DetectResponse)

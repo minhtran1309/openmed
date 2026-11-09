@@ -13,11 +13,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, FastAPI
 
 from openmed.core.errors import PolicyError
+from openmed.core.pipeline import ModelDetector
 from openmed.core.policy import compile_policy, verify_policy_plan
 from openmed.core.provenance import policy_fingerprint, provenance
 
+from .detect import detect_segments
 from .errors import LeanError, install_error_handlers
 from .schemas import (
+    DetectRequest,
+    DetectResponse,
     HealthResponse,
     PolicyCoverageResponse,
     ProvenanceResponse,
@@ -30,6 +34,15 @@ router = APIRouter()
 def get_provenance_payload() -> dict[str, Any]:
     """Dependency supplying the provenance payload (overridable in tests)."""
     return provenance()
+
+
+def get_model_detector() -> ModelDetector | None:
+    """Dependency supplying the PII model stage (overridable in tests).
+
+    ``None`` means the pipeline loads the configured model
+    (``OPENMED_LEAN_MODEL`` or the openmed default).
+    """
+    return None
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -78,6 +91,38 @@ def get_policy_coverage(name: str) -> dict[str, Any]:
         "coverage_percent": proof.coverage_percent,
         "fingerprint": policy_fingerprint(name),
     }
+
+
+@router.post(
+    "/v1/detect",
+    response_model=DetectResponse,
+    response_model_exclude_none=True,
+)
+def detect(
+    request: DetectRequest,
+    model_detector: ModelDetector | None = Depends(get_model_detector),
+    provenance_payload: dict[str, Any] = Depends(get_provenance_payload),
+) -> dict[str, Any]:
+    """Detect identifiers in each segment under a policy profile.
+
+    Runs the full pipeline with the safety sweep on. Offsets index the exact
+    segment text sent; no span text is returned.
+
+    Args:
+        request: Segments, policy name and ``preserve_whitespace``.
+        model_detector: Injected PII model stage (``None`` for the default).
+        provenance_payload: Version, fork tag, models and fingerprints.
+
+    Returns:
+        ``findings`` (``segment_id``, ``start``, ``end``, ``label``, optional
+        ``subtype``, ``score``, ``policy_class``) and ``provenance``.
+
+    Raises:
+        LeanError: ``UNKNOWN_POLICY``, ``EMPTY_DOCUMENT``,
+            ``DUPLICATE_SEGMENT_ID`` or ``DETECT_FAILED``.
+    """
+    findings = detect_segments(request, model_detector=model_detector)
+    return {"findings": findings, "provenance": provenance_payload}
 
 
 @router.get("/v1/schemas/{name}")
