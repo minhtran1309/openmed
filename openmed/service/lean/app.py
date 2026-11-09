@@ -17,9 +17,12 @@ from openmed.core.pipeline import ModelDetector
 from openmed.core.policy import compile_policy, verify_policy_plan
 from openmed.core.provenance import policy_fingerprint, provenance
 
+from .apply import apply_document
 from .detect import detect_segments
 from .errors import LeanError, install_error_handlers
 from .schemas import (
+    ApplyRequest,
+    ApplyResponse,
     DetectRequest,
     DetectResponse,
     HealthResponse,
@@ -123,6 +126,30 @@ def detect(
     """
     findings = detect_segments(request, model_detector=model_detector)
     return {"findings": findings, "provenance": provenance_payload}
+
+
+@router.post("/v1/apply", response_model=ApplyResponse)
+def apply(request: ApplyRequest) -> dict[str, Any]:
+    """Render caller-recorded spans over a document. Never detects.
+
+    Args:
+        request: Segments with spans, treatment, policy and either
+            ``offset_days`` or ``patient_key`` with ``secret``.
+
+    Returns:
+        Rendered ``segments``, a ``spans`` report (``action``, ``out_start``,
+        ``out_end``) covering every input span (directly or via merges),
+        overlap ``merges`` and
+        ``provenance``. No original span text.
+
+    Raises:
+        LeanError: ``UNSUPPORTED_TREATMENT``, ``UNKNOWN_POLICY``,
+            ``EMPTY_DOCUMENT``, ``DUPLICATE_SEGMENT_ID``,
+            ``UNKNOWN_SEGMENT_ID``, ``SPAN_OUT_OF_RANGE``, ``SPAN_INVERTED``,
+            ``UNKNOWN_LABEL``, ``DATE_SHIFT_KEY_REQUIRED``,
+            ``INVALID_REQUEST`` or ``APPLY_FAILED``.
+    """
+    return apply_document(request)
 
 
 @router.get("/v1/schemas/{name}")

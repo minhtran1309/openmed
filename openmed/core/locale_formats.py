@@ -307,6 +307,7 @@ BACKLOG_LOCALES: Final = frozenset(
 LOCALE_DATE_ORDER: Final[Mapping[str, DateOrder]] = {
     # Wired PII languages.
     "en": "mdy",
+    "en-au": "dmy",
     "en-gb": "dmy",
     "en-in": "dmy",
     "en-za": "dmy",

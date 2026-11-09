@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
 
 from .errors import ERROR_CODES
 
@@ -99,6 +99,106 @@ class DetectResponse(BaseModel):
     provenance: ProvenanceResponse
 
 
+Treatment = Literal["mark", "replace", "generalise", "keep"]
+
+
+class ApplySpanIn(BaseModel):
+    """One caller-recorded span of an apply segment.
+
+    Offsets are Python code-point offsets into the segment text (not graphemes
+    or UTF-16 units); callers must supply grapheme-aligned spans, since an edge
+    inside a grapheme cluster is rendered as given. ``segment_id`` is
+    optional and, when given, must name the enclosing segment. ``subtype`` and
+    ``replacement`` are accepted; ``replacement`` is ignored under ``mark``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    span_id: StrictStr = Field(min_length=1)
+    start: StrictInt
+    end: StrictInt
+    label: StrictStr
+    subtype: StrictStr | None = None
+    replacement: StrictStr | None = None
+    segment_id: StrictStr | None = None
+
+
+class ApplySegmentIn(BaseModel):
+    """One segment of a ``POST /v1/apply`` document."""
+
+    model_config = ConfigDict(extra="forbid")
+    segment_id: StrictStr = Field(min_length=1)
+    text: StrictStr
+    spans: list[ApplySpanIn] = Field(default_factory=list)
+
+
+class ApplyRequest(BaseModel):
+    """Request of ``POST /v1/apply``.
+
+    ``treatment`` is validated against the full vocabulary (anything else is
+    ``INVALID_REQUEST``); only ``mark`` is implemented, the rest return
+    ``UNSUPPORTED_TREATMENT``. Pass ``offset_days`` or ``patient_key`` with
+    ``secret`` when a date shift may be needed. Keys and secrets are never
+    logged or returned.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    document: list[ApplySegmentIn]
+    treatment: Treatment
+    policy: StrictStr
+    offset_days: StrictInt | None = None
+    patient_key: StrictStr | None = Field(default=None, min_length=1)
+    secret: StrictStr | None = Field(default=None, min_length=1)
+
+
+class ApplySegmentOut(BaseModel):
+    """One rendered segment."""
+
+    model_config = ConfigDict(extra="forbid")
+    segment_id: str
+    text: str
+
+
+class ApplySpanOut(BaseModel):
+    """Report for one span, in output coordinates.
+
+    Together with ``merges`` this covers every input span (directly or via
+    merges).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    span_id: str
+    segment_id: str
+    action: Literal["mark", "shift", "keep"]
+    out_start: int
+    out_end: int
+
+
+class ApplyMerge(BaseModel):
+    """Spans merged into a kept span because they overlapped."""
+
+    model_config = ConfigDict(extra="forbid")
+    kept_span_id: str
+    merged_span_ids: list[str]
+
+
+class ApplyProvenance(BaseModel):
+    """Build and policy identification for an apply result."""
+
+    model_config = ConfigDict(extra="forbid")
+    openmed_version: str
+    policy_fingerprint: str
+
+
+class ApplyResponse(BaseModel):
+    """Response of ``POST /v1/apply``. Carries no original span text."""
+
+    model_config = ConfigDict(extra="forbid")
+    segments: list[ApplySegmentOut]
+    spans: list[ApplySpanOut]
+    merges: list[ApplyMerge]
+    provenance: ApplyProvenance
+
+
 class ErrorResponse(BaseModel):
     """Body of every non-200 response."""
 
@@ -131,3 +231,5 @@ register_schema("error_response", ErrorResponse)
 register_schema("policy_coverage_response", PolicyCoverageResponse)
 register_schema("detect_request", DetectRequest)
 register_schema("detect_response", DetectResponse)
+register_schema("apply_request", ApplyRequest)
+register_schema("apply_response", ApplyResponse)

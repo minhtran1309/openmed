@@ -226,6 +226,44 @@ def test_l1_masks_every_direct_identifier_except_dob() -> None:
         assert profile.action_for(label) == expected, label
 
 
+@pytest.mark.parametrize("name", CCIA_POLICIES)
+def test_apply_spans_never_passes_a_direct_identifier_through(name: str) -> None:
+    from openmed.core.apply_spans import apply_spans
+
+    direct = sorted(
+        label
+        for label in CANONICAL_LABELS
+        if policy_label_for(label) == DIRECT_IDENTIFIER
+    )
+    assert direct
+    value_for = {"DATE_OF_BIRTH": "04/07/2023"}
+    document = []
+    for index, label in enumerate(direct):
+        value = value_for.get(label, f"Synthvalue{index:03d}")
+        text = f"Field: {value}."
+        document.append(
+            {
+                "segment_id": label,
+                "text": text,
+                "spans": [
+                    {
+                        "span_id": label,
+                        "start": 7,
+                        "end": 7 + len(value),
+                        "label": label,
+                    }
+                ],
+            }
+        )
+    result = apply_spans(document, treatment="mark", policy=name, offset_days=10)
+    for span in result.spans:
+        assert span["action"] in {"mark", "shift"}, (name, span["span_id"])
+    for source, rendered in zip(document, result.segments):
+        value = source["text"][7:-1]
+        assert value not in rendered["text"], (name, source["segment_id"])
+        assert rendered["text"] != source["text"]
+
+
 def test_l1_keeps_quasi_identifiers_other_than_date() -> None:
     profile = load_policy("ccia_l1")
     for label in CANONICAL_LABELS:
