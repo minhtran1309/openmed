@@ -1078,6 +1078,9 @@ def _pii_merge_metadata(entity: Mapping[str, Any]) -> dict[str, Any] | None:
     if entity.get("calendar"):
         # Value-free calendar code from a non-Gregorian month-name date rule.
         metadata["calendar"] = str(entity["calendar"])
+    if entity.get("subtype"):
+        # Value-free identifier subtype from a validated locale rule.
+        metadata["subtype"] = str(entity["subtype"])
     return metadata or None
 
 

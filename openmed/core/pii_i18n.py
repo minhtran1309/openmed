@@ -43,6 +43,7 @@ from .anonymizer.providers.clinical_ids import (
     validate_uk_nhs_number,
     validate_uk_nino,
 )
+from .au_identifiers import AU_IDENTIFIER_PII_PATTERNS
 from .lang_id_codemix import (
     TokenLanguageRun,
     TokenLIDHook,
@@ -5833,9 +5834,10 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
     # Australian Medicare card number (10 digits, ``NNNN NNNNN N``) with an
     # optional separate one-digit IRN. The main card's first eight digits carry
     # a weighted mod-10 checksum; the full matched identifier is protected.
+    # Never carved out of a longer separated digit run.
     PIIPattern(
-        r"\b(?:[2-6]\d{9}|[2-6]\d{3} \d{5} \d)"
-        r"(?:(?:[ ]*/[ ]*|[ -]?)[1-9])?\b",
+        r"(?<!\d)(?<!\d[ -])\b(?:[2-6]\d{9}|[2-6]\d{3} \d{5} \d)"
+        r"(?:(?:[ ]*/[ ]*|[ -]?)[1-9])?\b(?![ -]?\d)",
         "national_id",
         priority=12,
         base_score=0.45,
@@ -5848,11 +5850,14 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
         ],
         context_boost=0.45,
         validator=validate_australian_medicare,
+        reject_unlabelled_validation_failure=True,
+        subtype="AU_MEDICARE",
     ),
     # Australian Tax File Number (TFN, exactly 9 digits, ``NNN NNN NNN``
-    # spacing; weighted mod-11 checksum).
+    # spacing; weighted mod-11 checksum). Never carved out of a longer
+    # separated digit run such as a spaced ABN.
     PIIPattern(
-        r"\b(?:\d{9}|\d{3} \d{3} \d{3})\b",
+        r"(?<!\d)(?<!\d[ -])\b(?:\d{9}|\d{3} \d{3} \d{3})\b(?![ -]?\d)",
         "national_id",
         priority=11,
         base_score=0.45,
@@ -5863,7 +5868,10 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
         ],
         context_boost=0.45,
         validator=validate_australian_tfn,
+        reject_unlabelled_validation_failure=True,
+        subtype="AU_TFN",
     ),
+    *AU_IDENTIFIER_PII_PATTERNS,
 ]
 
 

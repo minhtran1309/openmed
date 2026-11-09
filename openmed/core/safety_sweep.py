@@ -41,6 +41,16 @@ _SPLIT_IDENTIFIER_PATTERNS = (
     ),
 )
 
+# OCR-split forms of subtyped locale identifiers, keyed by ``PIIPattern.subtype``
+# so they only run when that locale's pattern is active. Unlike the label-keyed
+# shapes above, plain irregular spacing counts as a split here. Each entry is
+# ``(subtype, shape, requires_context)``; the pattern's own validator must
+# still accept the digits.
+_SPLIT_SUBTYPE_PATTERNS = (
+    ("AU_IHI", re.compile(r"(?<!\w)8(?:[-.,· ]{0,2}\d){15}(?!\w)"), False),
+    ("AU_MEDICARE", re.compile(r"(?<!\w)[2-6](?:[-.,· ]{0,2}\d){9}(?!\w)"), True),
+)
+
 
 @dataclass(frozen=True)
 class _Candidate:
@@ -137,12 +147,14 @@ def _candidate_metadata(candidate: _Candidate) -> dict[str, Any]:
     calendar = getattr(candidate.pattern, "calendar", None)
     if calendar is not None:
         safety_sweep_metadata["calendar"] = calendar
+    subtype = getattr(candidate.pattern, "subtype", None)
     return {
         "source": SAFETY_SWEEP_SOURCE,
         "patterns_version": SAFETY_SWEEP_PATTERNS_VERSION,
         "safety_sweep": safety_sweep_metadata,
         **({"id_subtype": id_subtype} if id_subtype is not None else {}),
         **({"calendar": calendar} if calendar is not None else {}),
+        **({"subtype": subtype} if subtype is not None else {}),
     }
 
 
@@ -231,6 +243,8 @@ def _collect_candidates(text: str, patterns: Sequence[PIIPattern]) -> list[_Cand
                 )
             )
 
+    candidates.extend(_split_subtype_candidates(text, patterns))
+
     if labelled_rejections:
         # A value labelled as one identifier that fails its validator is not
         # relabelled, whole or in part, by a lower-priority pattern.
@@ -253,6 +267,55 @@ def _collect_candidates(text: str, patterns: Sequence[PIIPattern]) -> list[_Cand
             -(candidate.end - candidate.start),
         )
     )
+    return candidates
+
+
+def _is_fragment_of_longer_run(text: str, start: int, end: int) -> bool:
+    return bool(
+        re.search(r"\d[-.,· ]{0,2}$", text[max(0, start - 3) : start])
+        or re.match(r"[-.,· ]{0,2}\d", text[end : end + 3])
+    )
+
+
+def _split_subtype_candidates(
+    text: str, patterns: Sequence[PIIPattern]
+) -> list[_Candidate]:
+    """Return OCR-split candidates for active subtyped identifier patterns."""
+    by_subtype: dict[str, PIIPattern] = {}
+    for pattern in patterns:
+        subtype = getattr(pattern, "subtype", None)
+        if subtype is not None:
+            by_subtype.setdefault(subtype, pattern)
+
+    candidates: list[_Candidate] = []
+    for subtype, split_pattern, requires_context in _SPLIT_SUBTYPE_PATTERNS:
+        pattern = by_subtype.get(subtype)
+        if pattern is None:
+            continue
+        for match in split_pattern.finditer(text):
+            start, end = match.span()
+            surface = match.group()
+            if not re.search(r"[-.,·\s]", surface):
+                continue
+            if _is_fragment_of_longer_run(text, start, end):
+                # Never reinterpret a fragment of a longer separated digit run.
+                continue
+            canonical = re.sub(r"[-.,·\s]", "", surface)
+            if not _validated(pattern, canonical):
+                continue
+            if requires_context and not _has_context(text, start, end, pattern):
+                continue
+            candidates.append(
+                _Candidate(
+                    start=start,
+                    end=end,
+                    label=pattern.entity_type,
+                    text=surface,
+                    confidence=_confidence(text, start, end, pattern),
+                    priority=pattern.priority,
+                    pattern=pattern,
+                )
+            )
     return candidates
 
 

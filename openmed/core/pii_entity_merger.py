@@ -47,6 +47,10 @@ class PIIPattern:
     - validator: Optional checksum/validation function to confirm matches
     - reject_on_validation_failure: Drop regex matches whose validator fails,
       rather than retaining them with a reduced confidence score
+    - reject_unlabelled_validation_failure: Drop validator failures only when
+      no context word directly labels the value; a labelled failure is kept
+      with a reduced score and no subtype (ignored when
+      ``reject_on_validation_failure`` is set)
     - context_required: Require nearby context for semantic-only recognition
     - safety_sweep_requires_context: Require nearby context before the
       deterministic safety sweep accepts this pattern
@@ -55,6 +59,9 @@ class PIIPattern:
     - calendar: Optional value-free calendar code (for example ``"hijri"``)
       copied into the metadata of matched date spans; ``None`` means Gregorian
       or unspecified
+    - subtype: Optional value-free identifier subtype (for example
+      ``"AU_MEDICARE"``) copied into the metadata of validated matches as
+      ``metadata["subtype"]``; ``None`` adds no metadata key
 
     Example:
         PIIPattern(
@@ -85,6 +92,8 @@ class PIIPattern:
     match_normalizer: Optional[Callable[[str], OffsetMappedText]] = None
     context_normalizer: Optional[Callable[[str], str]] = None
     calendar: Optional[str] = None
+    subtype: Optional[str] = None
+    reject_unlabelled_validation_failure: bool = False
 
 
 _VALUE_GROUP = "value"
@@ -855,6 +864,19 @@ def find_semantic_units(
                                 (start, end, pii_pattern.priority)
                             )
                         continue
+                    if (
+                        pii_pattern.reject_unlabelled_validation_failure
+                        and not is_labelled_value(
+                            text,
+                            start,
+                            pii_pattern.context_words,
+                            normalizer=pii_pattern.context_normalizer,
+                        )
+                    ):
+                        # Unlabelled checksum failures are noise; a labelled
+                        # one (likely a typo or OCR error) is kept below at a
+                        # reduced score, unvalidated, so it is still redacted.
+                        continue
                     # Failed validation - significantly reduce score
                     score = score * 0.3  # Reduce to 30% confidence
                     validated = False
@@ -1125,6 +1147,9 @@ def merge_entities_with_semantic_units(
                     "mixed_label_union": mixed_label_union,
                     "detector_sources": ["ml", "locale_rule"],
                     **_calendar_entry(unit_pattern),
+                    **_subtype_entry(
+                        unit_pattern, unit_validated, final_label, unit_type
+                    ),
                 }
             )
 
@@ -1144,6 +1169,9 @@ def merge_entities_with_semantic_units(
                     "mixed_label_union": False,
                     "detector_sources": ["locale_rule"],
                     **_calendar_entry(unit_pattern),
+                    **_subtype_entry(
+                        unit_pattern, unit_validated, unit_type, unit_type
+                    ),
                 }
             )
 
@@ -1162,6 +1190,40 @@ def _calendar_entry(pattern: Any) -> Dict[str, str]:
     """Return the value-free calendar code a semantic unit's pattern carries."""
     calendar = getattr(pattern, "calendar", None)
     return {"calendar": calendar} if calendar else {}
+
+
+def _subtype_entry(
+    pattern: Any, validated: bool, final_label: str, unit_type: str
+) -> Dict[str, str]:
+    """Return the value-free identifier subtype a semantic unit's pattern carries.
+
+    The subtype is only claimed when the pattern's validator accepted the match
+    and the emitted label is the pattern's own label family, so a model label
+    that overrides the pattern never inherits a subtype it did not earn.
+    """
+    subtype = getattr(pattern, "subtype", None)
+    if not subtype or not validated:
+        return {}
+    if normalize_label(str(final_label)) != normalize_label(str(unit_type)):
+        return {}
+    return {"subtype": subtype}
+
+
+def _cluster_subtype_entry(
+    cluster: List[Dict[str, Any]], winner: Dict[str, Any]
+) -> Dict[str, str]:
+    """Keep a subtype when the cluster agrees on it and the winner's label fits."""
+    carriers = [entity for entity in cluster if entity.get("subtype")]
+    subtypes = {str(entity["subtype"]) for entity in carriers}
+    if len(subtypes) != 1:
+        return {}
+    winner_family = normalize_label(str(winner.get("entity_type", "")))
+    if any(
+        normalize_label(str(entity.get("entity_type", ""))) == winner_family
+        for entity in carriers
+    ):
+        return {"subtype": subtypes.pop()}
+    return {}
 
 
 def _coalesce_overlapping_merged_entities(
@@ -1251,6 +1313,7 @@ def _coalesce_overlapping_merged_entities(
                 "detector_sources": detector_sources,
                 # Keep a calendar code only when the cluster agrees on one.
                 **({"calendar": calendars.pop()} if len(calendars) == 1 else {}),
+                **_cluster_subtype_entry(cluster, winner),
             }
         )
 
