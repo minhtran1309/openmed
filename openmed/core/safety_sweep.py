@@ -49,6 +49,18 @@ _SPLIT_IDENTIFIER_PATTERNS = (
 _SPLIT_SUBTYPE_PATTERNS = (
     ("AU_IHI", re.compile(r"(?<!\w)8(?:[-.,· ]{0,2}\d){15}(?!\w)"), False),
     ("AU_MEDICARE", re.compile(r"(?<!\w)[2-6](?:[-.,· ]{0,2}\d){9}(?!\w)"), True),
+    # Australian mobile/geographic numbers, national or ``+61``, with OCR
+    # separators (parentheses allowed around the area code). Dotted dates are
+    # never read as phones.
+    (
+        "AU_PHONE",
+        re.compile(
+            r"(?<![\w+(])(?!\d{1,2}[./-]\d{1,2}[./-]\d{2,4})"
+            r"(?:\+[-.,· ]{0,2}6[-.,· ]{0,2}1[-.,· ]{0,2}(?:\(0\)[-.,· ]{0,2})?"
+            r"|\(?0)(?:[-.,·() ]{0,2}\d){9}(?!\w)"
+        ),
+        True,
+    ),
 )
 
 

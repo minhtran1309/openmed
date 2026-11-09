@@ -43,6 +43,7 @@ from .anonymizer.providers.clinical_ids import (
     validate_uk_nhs_number,
     validate_uk_nino,
 )
+from .au_contact import AU_CONTACT_PII_PATTERNS
 from .au_identifiers import AU_IDENTIFIER_PII_PATTERNS
 from .lang_id_codemix import (
     TokenLanguageRun,
@@ -5872,6 +5873,7 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
         subtype="AU_TFN",
     ),
     *AU_IDENTIFIER_PII_PATTERNS,
+    *AU_CONTACT_PII_PATTERNS,
 ]
 
 
