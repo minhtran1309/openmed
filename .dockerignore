@@ -19,6 +19,7 @@ __pycache__/
 coverage.xml
 
 dist/
+!dist/*.whl
 build/
 site/
 docs/site/
