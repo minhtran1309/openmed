@@ -99,6 +99,19 @@ class DetectResponse(BaseModel):
     provenance: ProvenanceResponse
 
 
+class SelftestRequest(BaseModel):
+    """Optional (empty) body of ``POST /v1/selftest``; no fields are accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SelftestResponse(BaseModel):
+    """Response of ``POST /v1/selftest``: check names and values only."""
+
+    model_config = ConfigDict(extra="forbid")
+    checks: dict[str, Literal["pass", "fail"]]
+
+
 Treatment = Literal["mark", "replace", "generalise", "keep"]
 
 
@@ -231,5 +244,6 @@ register_schema("error_response", ErrorResponse)
 register_schema("policy_coverage_response", PolicyCoverageResponse)
 register_schema("detect_request", DetectRequest)
 register_schema("detect_response", DetectResponse)
+register_schema("selftest_response", SelftestResponse)
 register_schema("apply_request", ApplyRequest)
 register_schema("apply_response", ApplyResponse)

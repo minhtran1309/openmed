@@ -28,8 +28,11 @@ from .schemas import (
     HealthResponse,
     PolicyCoverageResponse,
     ProvenanceResponse,
+    SelftestRequest,
+    SelftestResponse,
     get_schema,
 )
+from .selftest import run_selftest
 
 router = APIRouter()
 
@@ -150,6 +153,30 @@ def apply(request: ApplyRequest) -> dict[str, Any]:
             ``INVALID_REQUEST`` or ``APPLY_FAILED``.
     """
     return apply_document(request)
+
+
+@router.post("/v1/selftest", response_model=SelftestResponse)
+def selftest(
+    request: SelftestRequest | None = None,
+    model_detector: ModelDetector | None = Depends(get_model_detector),
+) -> dict[str, Any]:
+    """Run the consumer's synthetic probe and report pass/fail per check.
+
+    The probe runs through detect (``ccia_l3``) then apply (``mark``,
+    ``ccia_l1``, fixed offset). The ``person_tag`` and ``year_tag`` checks need
+    the PII model stage; the other four come from patterns and apply.
+
+    Args:
+        request: Optional empty body; extra fields are ``INVALID_REQUEST``.
+        model_detector: Injected PII model stage (``None`` for the default).
+
+    Returns:
+        ``{"checks": {name: "pass" | "fail"}}``: names and values only.
+
+    Raises:
+        LeanError: ``DETECT_FAILED`` or ``APPLY_FAILED`` on unexpected failure.
+    """
+    return {"checks": run_selftest(model_detector)}
 
 
 @router.get("/v1/schemas/{name}")
