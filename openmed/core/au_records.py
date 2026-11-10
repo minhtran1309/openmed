@@ -29,7 +29,8 @@ Design rules:
   the multi-word labels (``Hospital No``, ``Lab No`` ...) and ``Accession``
   are case-insensitive. ``Hospital``, ``Lab`` and ``Specimen`` take ``No``,
   ``No.`` or ``Number``; ``Accession`` and ``Patient ID`` take one
-  optionally (``Accession No: 12345678``, ``Patient ID Number 12345``).
+  optionally (``Accession No: 12345678``, ``Patient ID Number 12345``), and
+  ``Accession`` also takes ``Nr`` or ``Nr.``.
   A research ``Participant`` takes ``ID``, ``No`` or ``Number``, and a
   ``Subject`` takes ``ID``. ``Trial ID`` and ``Study ID`` are not labels:
   they usually hold a public registry or protocol number.
@@ -44,11 +45,14 @@ Design rules:
 * Values are case-sensitive: up to three capital letters (optionally
   followed by a hyphen), then digits, with optional hyphens or ``NNN NNN
   NNN`` / ``NNN NNN NNNN`` style spacing, then an optional ``-`` and check
-  letter (``MRN: 1234567-K``).
+  letter (``MRN: 1234567-K``). Any other token of 4 to 16 capital letters,
+  digits and hyphens with at least four digits is also a value after a
+  label, so a bare check letter (``URN: 0012345A``) or an embedded letter
+  (``Specimen No: 23S012345``) is not dropped.
 * An EMR running title line (``CITIZEN, Jane Ann - 12345678-K``) has no
   field label: the all-caps surname, the comma, the title-case or all-caps
   given names and the spaced dash act as the label. The value is six to ten
-  digits with an optional check letter; a bare ten-digit AU mobile or
+  digits with an optional check letter, dashed or not; a bare ten-digit AU mobile or
   geographic number is a phone, not a record. The line is matched against
   the source layout, so the given names never span a line break, though a
   column gap may follow the comma or surround the dash.
@@ -130,7 +134,9 @@ other exact, token-bounded copy of the same text in the run is that value
 too: a running header ``Jane CITIZEN 04/07/1961`` becomes
 ``DATE_OF_BIRTH`` rather than ``DATE``, and a table cell under an ``MRN``
 heading becomes ``ID_NUM``. A value that is never labelled in the run is
-not propagated, so an unlabelled header date stays ``DATE``.
+not propagated, so an unlabelled header date stays ``DATE``. Inside
+:func:`labelled_value_exchange` the labelled values of other runs (the other
+segments of one lean ``/v1/detect`` request) propagate too.
 """
 
 from __future__ import annotations
@@ -169,6 +175,8 @@ AU_RECORD_CONTEXT_WORDS: tuple[str, ...] = (
     "Episode",
     "Visit No",
     "Accession",
+    "Accession Nr",
+    "Accession Nr.",
     "Lab No",
     "Specimen No",
     "Participant ID",
@@ -191,7 +199,7 @@ _FIELD_LABELS = (
     rf"|Specimen[ \t]+{_NUMBER_WORD}"
     rf"|Participant[ \t]+(?:ID|{_NUMBER_WORD})"
     rf"|Subject[ \t]+ID"
-    rf"|Accession(?:[ \t]+{_NUMBER_WORD})?)"
+    rf"|Accession(?:[ \t]+(?:{_NUMBER_WORD}|Nr\.?))?)"
 )
 # ``Episode`` and ``Visit`` are common prose words, so they count only before
 # an explicit ``:``/``#`` or a ``No``/``Number`` label.
@@ -200,12 +208,17 @@ _LABEL = (
     rf"(?<![A-Za-z0-9])"
     rf"(?:(?:{_SHORT_LABELS}|{_FIELD_LABELS})(?![A-Za-z])|{_PROSE_LABELS})"
 )
-# A bare ``.`` is never a separator; it is only part of ``No.`` and ``U.R.``.
+# A bare ``.`` is never a separator; it is only part of ``No.``, ``Nr.`` and
+# ``U.R.``.
 _SEPARATOR = r"[ \t]*[:#]?[ \t]*"
 _VALUE = (
     r"(?:\d{3} \d{3} \d{4}(?![ ]?\d)"
     r"|\d{3}(?: \d{3}){1,3}(?![ ]?\d)"
     r"|(?:[A-Z]{1,3}-?)?\d[\d-]{3,11}\d(?:-[A-Z])?"
+    # Any other upper-case alphanumeric value with at least four digits, 4-16
+    # characters: a check letter (``0012345A``) or an embedded letter
+    # (``23S012345``). Only after an explicit label, so prose is unaffected.
+    r"|(?=(?:[A-Z-]*\d){4})[A-Z0-9][A-Z0-9-]{2,14}[A-Z0-9]"
     r"|\d{4,12})"
     r"(?![A-Za-z0-9])"
 )
@@ -691,7 +704,7 @@ _TITLE_SURNAME = r"[A-Z][A-Z'’-]*[A-Z]"
 _TITLE_GIVEN = r"(?:[A-Z][a-z]+(?:['’-][A-Z]?[a-z]+)*|[A-Z][A-Z'’-]*[A-Z])"
 # A bare ten-digit AU mobile or geographic number is a phone, not a record.
 _TITLE_NOT_PHONE = r"(?!0[23478]\d{8}(?![\d-]))"
-_TITLE_MRN = rf"{_TITLE_NOT_PHONE}\d{{6,10}}(?:-[A-Z])?"
+_TITLE_MRN = rf"{_TITLE_NOT_PHONE}\d{{6,10}}(?:-?[A-Z])?"
 
 AU_RECORD_PII_PATTERNS.append(
     PIIPattern(
@@ -761,17 +774,114 @@ MIN_PROPAGATED_RECORD_LENGTH = 6
 
 
 def _occurrences(view: str, surface: str) -> Iterator[tuple[int, int]]:
-    # Never inside a longer word, number, date or code. An all-digit value
-    # also never continues across one space into more digits.
-    guard = r"(?<!\d[ ])" if surface.isdigit() else ""
-    tail = r"(?![ ]\d)" if surface.isdigit() else ""
+    # Never inside a longer word or number: a letter or digit directly
+    # adjacent is the same token, and so is a digit joined by ``-``, ``/`` or
+    # ``.`` (a longer number or date, ``0012345-1``, ``7/0012345``). A space is
+    # a separator, so ``CITIZEN, Jane 0012345 04/07/1961`` is a copy even
+    # though a date follows it one space away, and so is a ``/`` after a word
+    # (a URL path ``.../urn/0012345``).
     pattern = re.compile(
-        rf"(?<![A-Za-z0-9])(?<![A-Za-z0-9][-/.]){guard}"
+        rf"(?<![A-Za-z0-9])(?<![0-9][-/.])"
         rf"{re.escape(surface)}"
-        rf"(?![A-Za-z0-9])(?![-/.][A-Za-z0-9]){tail}"
+        rf"(?![A-Za-z0-9])(?![-/.][0-9])"
     )
     for match in pattern.finditer(view):
         yield match.span()
+
+
+@dataclass(frozen=True)
+class LabelledAnchor:
+    """A labelled AU value that can tag unlabelled copies of its surface.
+
+    Held in memory only for the duration of one request; never logged.
+
+    Attributes:
+        label: Raw label (``date_of_birth`` or ``medical_record_number``).
+        confidence: Confidence given to every propagated copy.
+        metadata: Metadata of the labelled finding (carries the subtype).
+    """
+
+    label: str
+    confidence: float
+    metadata: Mapping[str, object]
+
+
+@dataclass
+class LabelledValueExchange:
+    """Labelled values shared between several ``Pipeline`` runs.
+
+    Inside :func:`labelled_value_exchange`, :func:`propagate_labelled_values`
+    records the anchors each run finds in :attr:`found` and also propagates
+    the anchors in :attr:`external` (found in other texts of the same
+    document). An anchor found in the run itself wins over an external one
+    with the same surface.
+
+    Attributes:
+        external: Surface -> anchor from other segments of the document.
+        found: Surface -> anchor detected by the runs inside the scope.
+    """
+
+    external: Mapping[str, LabelledAnchor] = field(default_factory=dict)
+    found: dict[str, LabelledAnchor] = field(default_factory=dict)
+
+
+_EXCHANGE: ContextVar[LabelledValueExchange | None] = ContextVar(
+    "au_labelled_value_exchange", default=None
+)
+
+
+@contextmanager
+def labelled_value_exchange(
+    external: Mapping[str, LabelledAnchor] | None = None,
+) -> Iterator[LabelledValueExchange]:
+    """Share labelled birth dates and record numbers across ``Pipeline`` runs.
+
+    The lean ``/v1/detect`` endpoint sends each segment (a table row, a page
+    block) through its own run. Inside this scope each run reports its
+    labelled anchors and propagates ``external`` anchors too, so a value
+    labelled in one segment tags its unlabelled copies in another.
+
+    Args:
+        external: Anchors found in other segments, keyed by surface text.
+
+    Yields:
+        The exchange; read :attr:`LabelledValueExchange.found` after the runs.
+    """
+    exchange = LabelledValueExchange(external=dict(external or {}))
+    token = _EXCHANGE.set(exchange)
+    try:
+        yield exchange
+    finally:
+        _EXCHANGE.reset(token)
+
+
+def _labelled_anchors(
+    text: str, entities: Sequence[object]
+) -> dict[str, LabelledAnchor]:
+    anchors: dict[str, LabelledAnchor] = {}
+    for entity in entities:
+        label = getattr(entity, "label", None)
+        metadata = getattr(entity, "metadata", None) or {}
+        if label not in _PROPAGATED_SUBTYPES:
+            continue
+        if metadata.get("subtype") != _PROPAGATED_SUBTYPES[label]:
+            continue
+        if metadata.get("propagated_from_label"):
+            continue
+        surface = text[entity.start : entity.end]
+        if label == "medical_record_number" and (
+            sum(char.isalnum() for char in surface) < MIN_PROPAGATED_RECORD_LENGTH
+        ):
+            continue
+        anchor = LabelledAnchor(label, entity.confidence, dict(metadata))
+        anchors.setdefault(surface, anchor)
+        # ``UR: 1234567-K`` (or ``1234567K``) also covers a bare ``1234567``.
+        stem = re.fullmatch(r"(.+\d)-?[A-Z]", surface)
+        if label == "medical_record_number" and stem is not None:
+            body = stem.group(1)
+            if sum(char.isalnum() for char in body) >= MIN_PROPAGATED_RECORD_LENGTH:
+                anchors.setdefault(body, anchor)
+    return anchors
 
 
 def propagate_labelled_values(
@@ -795,11 +905,20 @@ def propagate_labelled_values(
       subtype and confidence;
     * an occurrence that overlaps any other finding is left alone.
 
-    A record number labelled with a check letter (``UR: 1234567-K``) also
-    covers bare copies of its digit stem (``1234567``). A record number or
-    stem needs at least :data:`MIN_PROPAGATED_RECORD_LENGTH` letters and
-    digits. Nothing changes unless ``patterns`` holds the AU
-    record-number patterns, so other locales are untouched.
+    Token-bounded means no letter or digit directly adjacent and no digit
+    joined by ``-``, ``/`` or ``.``; a space is a separator, so a copy
+    followed by a space and a date (``0012345 04/07/1961``) is still a copy,
+    and so is one after a word and a ``/`` (``.../urn/0012345``).
+
+    A record number labelled with a check letter (``UR: 1234567-K`` or
+    ``UR: 1234567K``) also covers bare copies of its digit stem
+    (``1234567``). A record number or stem needs at least
+    :data:`MIN_PROPAGATED_RECORD_LENGTH` letters and digits. Only birth
+    dates and record numbers propagate; clinician identifiers (provider,
+    AHPRA, DVA numbers) do not. Inside :func:`labelled_value_exchange` the
+    anchors found here are reported and the exchange's external anchors from
+    other segments are propagated too. Nothing changes unless ``patterns``
+    holds the AU record-number patterns, so other locales are untouched.
 
     Args:
         text: The text the entities index.
@@ -816,26 +935,13 @@ def propagate_labelled_values(
     if not any(id(pattern) in pattern_ids for pattern in AU_RECORD_PII_PATTERNS):
         return entities
 
-    anchors: dict[str, object] = {}
-    for entity in entities:
-        label = getattr(entity, "label", None)
-        metadata = getattr(entity, "metadata", None) or {}
-        if label not in _PROPAGATED_SUBTYPES:
-            continue
-        if metadata.get("subtype") != _PROPAGATED_SUBTYPES[label]:
-            continue
-        surface = text[entity.start : entity.end]
-        if label == "medical_record_number" and (
-            sum(char.isalnum() for char in surface) < MIN_PROPAGATED_RECORD_LENGTH
-        ):
-            continue
-        anchors.setdefault(surface, entity)
-        # ``UR: 1234567-K`` also covers a bare ``1234567`` elsewhere.
-        stem = re.fullmatch(r"(.+\d)-[A-Z]", surface)
-        if label == "medical_record_number" and stem is not None:
-            body = stem.group(1)
-            if sum(char.isalnum() for char in body) >= MIN_PROPAGATED_RECORD_LENGTH:
-                anchors.setdefault(body, entity)
+    anchors = _labelled_anchors(text, entities)
+    exchange = _EXCHANGE.get()
+    if exchange is not None:
+        for surface, anchor in anchors.items():
+            exchange.found.setdefault(surface, anchor)
+        for surface, anchor in exchange.external.items():
+            anchors.setdefault(surface, anchor)
     if not anchors:
         return entities
 

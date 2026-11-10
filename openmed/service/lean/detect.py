@@ -4,6 +4,13 @@ Each segment runs through the full privacy ``Pipeline`` (safety sweep on) under
 the requested policy profile. Findings carry offsets into the exact text sent,
 the canonical label, an optional subtype, the score and the policy class from
 ``labels.LABEL_METADATA``. Span text is never returned or logged.
+
+Under the AU locale a birth date or record number detected after its label in
+one segment also tags its unlabelled copies in every other segment of the same
+request (see ``au_records.propagate_labelled_values``). The anchors are
+collected in a first pass and only segments that contain a copy of another
+segment's anchor are run a second time. Anchor values stay in memory for the
+request and are never logged or returned.
 """
 
 from __future__ import annotations
@@ -15,6 +22,7 @@ import threading
 from collections.abc import Mapping
 from typing import Any
 
+from openmed.core.au_records import LabelledAnchor, labelled_value_exchange
 from openmed.core.errors import PolicyError
 from openmed.core.labels import LABEL_METADATA
 from openmed.core.pipeline import ModelDetector, Pipeline
@@ -88,6 +96,22 @@ def _policy_class(canonical_label: str) -> str:
     return str(LABEL_METADATA[canonical_label]["policy_label"])
 
 
+class _SegmentRun:
+    """One segment's findings plus what cross-segment propagation needs."""
+
+    __slots__ = ("findings", "anchors", "normalized_text")
+
+    def __init__(
+        self,
+        findings: list[dict[str, Any]],
+        anchors: Mapping[str, LabelledAnchor],
+        normalized_text: str,
+    ) -> None:
+        self.findings = findings
+        self.anchors = anchors
+        self.normalized_text = normalized_text
+
+
 def _segment_findings(
     pipeline: Pipeline,
     segment_id: str,
@@ -96,13 +120,15 @@ def _segment_findings(
     preserve_whitespace: bool,
     table_header: list[str] | None = None,
     cells: list[DetectCell] | None = None,
-) -> list[dict[str, Any]]:
+    external_anchors: Mapping[str, LabelledAnchor] | None = None,
+) -> _SegmentRun:
     if not text.strip():
-        return []
+        return _SegmentRun([], {}, "")
     # With preserve_whitespace=False the pipeline indexes ``text.strip()``;
     # shift back so offsets always index the text the caller sent.
     shift = 0 if preserve_whitespace else len(text) - len(text.lstrip())
-    result = pipeline.run(text)
+    with labelled_value_exchange(external_anchors) as exchange:
+        result = pipeline.run(text)
     findings = []
     for span in result.spans:
         finding: dict[str, Any] = {
@@ -122,7 +148,17 @@ def _segment_findings(
         # In addition to, not deduplicated against, model and pattern hits.
         findings.extend(table_column_findings(segment_id, text, table_header, cells))
     findings.sort(key=lambda f: (f["start"], f["end"], f["label"]))
-    return findings
+    return _SegmentRun(findings, dict(exchange.found), result.normalized_text)
+
+
+def _needs_document_anchors(
+    run: _SegmentRun, document_anchors: Mapping[str, LabelledAnchor]
+) -> bool:
+    # Rerun only when another segment's anchor surface occurs in this one.
+    return any(
+        surface not in run.anchors and surface in run.normalized_text
+        for surface in document_anchors
+    )
 
 
 def detect_segments(
@@ -131,6 +167,11 @@ def detect_segments(
     model_detector: ModelDetector | None = None,
 ) -> list[dict[str, Any]]:
     """Run the full detection pipeline over each segment of ``request``.
+
+    Under the AU locale, labelled birth dates and record numbers found in any
+    segment also tag their unlabelled copies in every other segment. A
+    segment that holds such a copy is run a second time with the request's
+    anchors; offsets always index that segment's own text.
 
     Args:
         request: The validated detect request.
@@ -161,17 +202,31 @@ def detect_segments(
         )
         findings: list[dict[str, Any]] = []
         with _INFER_LOCK if model_detector is None else contextlib.nullcontext():
-            for segment in request.segments:
-                findings.extend(
-                    _segment_findings(
-                        pipeline,
-                        segment.segment_id,
-                        segment.text,
-                        preserve_whitespace=request.preserve_whitespace,
-                        table_header=segment.table_header,
-                        cells=segment.cells,
-                    )
+
+            def run_segment(segment: Any, external: Any = None) -> _SegmentRun:
+                return _segment_findings(
+                    pipeline,
+                    segment.segment_id,
+                    segment.text,
+                    preserve_whitespace=request.preserve_whitespace,
+                    table_header=segment.table_header,
+                    cells=segment.cells,
+                    external_anchors=external,
                 )
+
+            # Pass 1: each segment on its own, collecting labelled anchors.
+            runs = [run_segment(segment) for segment in request.segments]
+            document_anchors: dict[str, LabelledAnchor] = {}
+            for run in runs:
+                for surface, anchor in run.anchors.items():
+                    document_anchors.setdefault(surface, anchor)
+            # Pass 2: a segment holding a copy of another segment's labelled
+            # value runs again with the document's anchors.
+            for index, segment in enumerate(request.segments):
+                if _needs_document_anchors(runs[index], document_anchors):
+                    runs[index] = run_segment(segment, document_anchors)
+            for run in runs:
+                findings.extend(run.findings)
     except Exception as exc:
         logger.warning(
             "detect failed policy=%s type=%s", policy.name, type(exc).__name__

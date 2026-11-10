@@ -93,11 +93,67 @@ process-wide loader. Inference on that shared model is serialised per process
 requests queue. Scale throughput with `uvicorn --workers N`; each worker loads
 its own copy of the model.
 
-`/v1/detect` has no `locale` field. The AU recognisers (Medicare, TFN, IHI,
-ABN, ACN, AU phone, postcode and address) run only under policies whose
-profile sets an AU `implied_locale`, which in mt.1 means the `ccia_l1`,
+`/v1/detect` has no `locale` field. The AU recognisers run only under
+policies whose profile sets an AU `implied_locale`, which means the `ccia_l1`,
 `ccia_l2` and `ccia_l3` policies. Under any other policy, AU identifiers are
-found only if the PII model itself tags them.
+found only if the PII model itself tags them. The AU recognisers are:
+
+- the checksum identifiers from mt.1: Medicare, TFN, IHI, ABN and ACN, plus AU
+  phone, postcode and address;
+- record numbers after a field label (`UR`, `URN`, `MRN`, `Hospital No`,
+  `Patient ID`, `Episode No`, `Visit No`, `Accession`/`Accession No`/
+  `Accession Nr`, `Lab No`, `Specimen No`, `Participant ID`, `Subject ID`),
+  including values with a check letter or an embedded letter (`0012345A`,
+  `1234567-K`, `23S012345`), and the record number on an EMR running title
+  line (`CITIZEN, Jane - 12345678-K`);
+- report header values after their labels (`Name`, `Patient Name`, `Surname`,
+  `Given Names`, `DOB`, `Address`, `NOK`, `Referring Doctor`, `GP`, ...);
+- day-first dates (`4.7.61`, `4th July 1961`);
+- the NRP phrase (Aboriginal and/or Torres Strait Islander status);
+- AHPRA, DVA and Medicare provider numbers, each only directly after its own
+  field label (`AHPRA`, `DVA No`, `Provider No`, `Prescriber No`, ...);
+- the bracketed user id in an EMR print footer
+  (`Printed by CITIZEN, JANE [CITIZENJ]`).
+
+The `subtype` values to map are:
+
+| Subtype | Label | Source |
+| --- | --- | --- |
+| `AU_MEDICARE`, `AU_TFN`, `AU_IHI`, `AU_ABN`, `AU_ACN` | the matching AU label | checksum identifiers |
+| `AU_PHONE`, `AU_PHONE_INSTITUTIONAL` | `PHONE` | AU phone and fax numbers |
+| `AU_ADDRESS`, `AU_STATE`, `AU_POSTCODE` | `STREET_ADDRESS`, `LOCATION`, `ZIPCODE` | AU street and postal addresses |
+| `AU_UR` | `ID_NUM` | labelled record numbers, title-line record numbers, record-number table columns |
+| `AU_HEADER` | `PERSON`, `FIRST_NAME`, `LAST_NAME`, `DATE_OF_BIRTH`, `STREET_ADDRESS` | report header values |
+| `AU_PRINT_FOOTER` | `USERNAME` | print footer user id |
+| `NRP` | `ETHNICITY` | Aboriginal and/or Torres Strait Islander status |
+| `AHPRA` | `AHPRA_NUMBER` | AHPRA registration number |
+| `AU_DVA` | `DVA_NUMBER` | DVA file number |
+| `AU_PROVIDER` | `MEDICARE_PROVIDER_NUMBER` | Medicare provider number |
+
+### Labelled values repeated without their label
+
+Under the AU policies, once a birth date is detected after its `DOB` label
+(`AU_HEADER`) or a record number after its record label (`AU_UR`), every other
+exact copy of the same text is that value too: a running header `CITIZEN, Jane
+0012345 04/07/1961` gives `ID_NUM` (`AU_UR`) for `0012345` and `DATE_OF_BIRTH`
+(`AU_HEADER`) for the date, where the date alone would be `DATE`. A copy is a
+separate token: a letter or digit directly beside it, or joined by `-`, `/` or
+`.`, makes it part of a longer value and it is not tagged; a space is a
+separator. A record number needs at least six letters and digits, and one
+labelled with a check letter (`1234567-K` or `1234567K`) also covers bare
+copies of its digit stem (`1234567`). Only birth dates and record numbers
+propagate; AHPRA, DVA and provider numbers do not. A value never labelled
+anywhere in the request is not propagated.
+
+Propagation spans the whole request: labelled values are collected from all
+segments, and a value labelled in one segment also tags its copies in every
+other segment (for example a `UR:` in the header block and its copy in a
+page-2 running header or a table row sent as its own segment). Offsets stay
+per segment. Send all segments of one document in one request to get this; a
+segment that holds a copy of another segment's labelled value is run through
+the pipeline a second time, so such requests cost more. A request whose
+segments share no labelled value gives exactly the same response as before.
+Values are compared in memory only and are never logged or returned.
 
 ### Table rows
 
@@ -118,6 +174,11 @@ canonical label (for example `PERSON`, `DATE_OF_BIRTH`, `ID_NUM`), `score`
 1.0 and its `policy_class`. Only record-number columns carry a subtype
 (`AU_UR`). These findings are in addition to the model and pattern findings
 for the same text; they are not deduplicated, so merge overlaps on your side.
+When a table-column `DATE_OF_BIRTH` and a pipeline `DATE` cover exactly the
+same cell and both go to `/v1/apply`, the merged span currently keeps `DATE`:
+the output tag is `[DATE_n]` and the audit `label` is `DATE`. Both are masked
+and both map to the Safe Harbor date element, so nothing leaks; drop the
+less specific finding before `/v1/apply` if you need the `DATE_OF_BIRTH` tag.
 Unknown headers (such as `Exam`) add nothing, and a row whose cells all equal
 their headers (the header row) adds nothing. Segments without `table_header`
 give exactly the same response as before; only table-column findings carry

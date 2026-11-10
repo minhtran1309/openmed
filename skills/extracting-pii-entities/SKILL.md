@@ -189,10 +189,12 @@ ACN              AU_ACN       [89:100]
 ### Clinician and veteran identifiers
 
 Three more AU labels cover identifiers that appear in referrals, scripts and
-report headers. Each is tagged only with a context word nearby (`AHPRA`,
-`DVA`, `Provider No`, `Prescriber No`, ...): AHPRA and DVA numbers have no
-check digit, and a Medicare provider number must also pass its mod-11 check
-character.
+report headers. Each is tagged only directly after one of its field labels
+(`AHPRA`, `DVA No`, `Provider No`, `Prescriber`, ...); a label elsewhere in
+the sentence (`AHPRA registration for Dr Lee is MED0001234567`) is not enough.
+AHPRA and DVA numbers have no check digit, and a Medicare provider number must
+also pass its mod-11 check character. These numbers are not propagated to
+unlabelled copies.
 Synthetic examples:
 
 | Label | Subtype | Example value | Format |

@@ -332,7 +332,8 @@ def test_safety_sweep_en_au_emits_au_ur():
 
 _NON_AU_TEXT = (
     "UR No: A123456. Lab No: 1234567. Accession 123-456. MRN 0012345. "
-    "Patient ID 7654321."
+    "Patient ID 7654321. URN: 0047719B. Specimen No: 24S077123. "
+    "Accession Nr: 24077123. Lab No: 3381046W."
 )
 
 

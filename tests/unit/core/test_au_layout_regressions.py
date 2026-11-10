@@ -463,6 +463,10 @@ _NON_AU_TEXT = (
     + "  NUCLEAR MEDICINE REPORT                         NAME:          "
     + "VARGA, PETRA LOUISE\n"
     + "Report Name: Weekly Summary\nDrug Name: Kerrin Tablets\n"
+    # Final review I1/I3: a copy one space from a date, undashed check letters.
+    + "UR: 0058213\nPELLOW, Odette 0058213 22/09/1958\n"
+    + "URN: 0047719B\nOdette Pellow       0047719             6C\n"
+    + "Report          PELLOW, Odette - 40817263T\n"
 )
 _SALTED_FIELDS = ("doc_id", "text_hash")
 _SALTED_METADATA = ("normalized_text_hash",)
