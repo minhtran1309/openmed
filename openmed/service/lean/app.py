@@ -4,14 +4,24 @@ Later endpoints are added as ``APIRouter`` instances passed to ``create_app``
 (or included in ``_default_routers``); errors flow through ``LeanError`` or any
 exception carrying a vocabulary ``error_code``. Request and response bodies are
 never logged.
+
+The service refuses to start without ``OPENMED_AUDIT_KEY``: the check runs in
+the app lifespan only, so importing this module and calling ``create_app()``
+never need the key.
 """
 
 from __future__ import annotations
 
+import logging
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI
 
+from openmed.compliance.safe_harbor import generate_safe_harbor_attestation
+from openmed.core.apply_audit import AUDIT_KEY_ENV, build_apply_audit
 from openmed.core.errors import PolicyError
 from openmed.core.pipeline import ModelDetector
 from openmed.core.policy import compile_policy, verify_policy_plan
@@ -34,7 +44,53 @@ from .schemas import (
 )
 from .selftest import run_selftest
 
+logger = logging.getLogger("openmed.service.lean")
+
 router = APIRouter()
+
+_AUDIT_KEY_MISSING = "AUDIT_KEY_MISSING"
+
+
+class AuditKeyMissingError(RuntimeError):
+    """Raised at startup when ``OPENMED_AUDIT_KEY`` is unset or blank.
+
+    The message and ``error_code`` are both ``AUDIT_KEY_MISSING``.
+    """
+
+    error_code = _AUDIT_KEY_MISSING
+
+    def __init__(self) -> None:
+        super().__init__(_AUDIT_KEY_MISSING)
+
+
+def _configured_audit_key() -> str | None:
+    key = os.environ.get(AUDIT_KEY_ENV, "")
+    return key if key.strip() else None
+
+
+def get_audit_key() -> str:
+    """Dependency supplying the audit signing key (overridable in tests).
+
+    Reads ``OPENMED_AUDIT_KEY`` on every call. This guards apps started
+    without the lifespan check.
+
+    Returns:
+        The key exactly as set in the environment.
+
+    Raises:
+        LeanError: ``AUDIT_KEY_MISSING`` when the key is unset or blank.
+    """
+    key = _configured_audit_key()
+    if key is None:
+        raise LeanError(_AUDIT_KEY_MISSING)
+    return key
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if _configured_audit_key() is None:
+        raise AuditKeyMissingError()
+    yield
 
 
 def get_provenance_payload() -> dict[str, Any]:
@@ -132,27 +188,49 @@ def detect(
 
 
 @router.post("/v1/apply", response_model=ApplyResponse)
-def apply(request: ApplyRequest) -> dict[str, Any]:
+def apply(
+    request: ApplyRequest,
+    audit_key: str = Depends(get_audit_key),
+) -> dict[str, Any]:
     """Render caller-recorded spans over a document. Never detects.
 
     Args:
         request: Segments with spans, treatment, policy and either
             ``offset_days`` or ``patient_key`` with ``secret``.
+        audit_key: The ``OPENMED_AUDIT_KEY`` that signs the audit.
 
     Returns:
         Rendered ``segments``, a ``spans`` report (``action``, ``out_start``,
         ``out_end``) covering every input span (directly or via merges),
-        overlap ``merges`` and
-        ``provenance``. No original span text.
+        overlap ``merges``, ``provenance``, the signed ``audit`` report and
+        the Safe Harbor ``attestation`` built from it. No original span text.
 
     Raises:
         LeanError: ``UNSUPPORTED_TREATMENT``, ``UNKNOWN_POLICY``,
             ``EMPTY_DOCUMENT``, ``DUPLICATE_SEGMENT_ID``,
             ``UNKNOWN_SEGMENT_ID``, ``SPAN_OUT_OF_RANGE``, ``SPAN_INVERTED``,
             ``UNKNOWN_LABEL``, ``DATE_SHIFT_KEY_REQUIRED``,
-            ``INVALID_REQUEST`` or ``APPLY_FAILED``.
+            ``INVALID_REQUEST``, ``APPLY_FAILED`` or ``AUDIT_KEY_MISSING``.
     """
-    return apply_document(request)
+    result = apply_document(request)
+    document = [segment.model_dump() for segment in request.document]
+    try:
+        report = build_apply_audit(
+            document,
+            result,
+            policy=request.policy,
+            key=audit_key,
+            treatment=request.treatment,
+        )
+        attestation = generate_safe_harbor_attestation(report, any_policy=True)
+    except Exception as exc:
+        logger.warning("apply audit failed type=%s", type(exc).__name__)
+        raise LeanError("APPLY_FAILED") from None
+    return {
+        **result,
+        "audit": report.to_dict(),
+        "attestation": attestation.to_dict(),
+    }
 
 
 @router.post("/v1/selftest", response_model=SelftestResponse)
@@ -195,13 +273,16 @@ def create_app(extra_routers: tuple[APIRouter, ...] = ()) -> FastAPI:
         extra_routers: Additional routers to mount (later endpoints).
 
     Returns:
-        A FastAPI app with the shared error handlers installed.
+        A FastAPI app with the shared error handlers installed. Its lifespan
+        raises ``AuditKeyMissingError`` at startup when
+        ``OPENMED_AUDIT_KEY`` is unset or blank; building the app does not.
     """
     app = FastAPI(
         title="OpenMed lean service",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=_lifespan,
     )
     install_error_handlers(app)
     app.include_router(router)

@@ -50,6 +50,7 @@ def test_error_vocabulary_is_fixed() -> None:
         "DATE_SHIFT_KEY_REQUIRED",
         "DETECT_FAILED",
         "APPLY_FAILED",
+        "AUDIT_KEY_MISSING",
     )
     with pytest.raises(ValueError):
         LeanError("NOT_A_CODE")

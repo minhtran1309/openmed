@@ -77,7 +77,14 @@ def test_apply_renders_mark_and_shift(client) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"segments", "spans", "merges", "provenance"}
+    assert set(body) == {
+        "segments",
+        "spans",
+        "merges",
+        "provenance",
+        "audit",
+        "attestation",
+    }
     assert body["segments"] == [
         {
             "segment_id": "s1",
@@ -298,16 +305,27 @@ def test_logs_and_errors_never_contain_text_key_or_secret(client, caplog) -> Non
     assert [r.status_code for r in responses[1:]] == [400, 400, 400, 404, 400, 400]
     blob = _log_blob(caplog)
     for response in responses:
-        blob += response.text
+        body = response.json()
+        # The audit and attestation hold hex digests, where a numeric sentinel
+        # such as "2019" can occur by chance; test_lean_apply_audit.py checks
+        # them with non-hex sentinels.
+        audit_parts = {k: body.pop(k, None) for k in ("audit", "attestation")}
+        blob += json.dumps(body)
+        for value in (SYNTHETIC_KEY, SYNTHETIC_SECRET, NAME, DATE):
+            assert value not in json.dumps(audit_parts)
     for value in (SYNTHETIC_KEY, SYNTHETIC_SECRET, NAME, DATE, "2019"):
         assert value not in blob
 
 
 def test_response_contains_no_original_span_text(client) -> None:
     response = _apply(client, _doc(), offset_days=10)
-    serialized = json.dumps(response.json())
+    body = response.json()
+    rendered = json.dumps({"segments": body["segments"], "spans": body["spans"]})
     for value in (NAME, NAME.upper(), DATE, "2019"):
-        assert value not in serialized
+        assert value not in rendered
+    signed = json.dumps({"audit": body["audit"], "attestation": body["attestation"]})
+    for value in (NAME, NAME.upper(), DATE):
+        assert value not in signed
 
 
 def test_apply_schemas_are_published(client) -> None:
@@ -320,4 +338,6 @@ def test_apply_schemas_are_published(client) -> None:
         "spans",
         "merges",
         "provenance",
+        "audit",
+        "attestation",
     }

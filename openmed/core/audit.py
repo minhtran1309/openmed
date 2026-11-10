@@ -64,6 +64,9 @@ _AUDIT_PAN_RE = re.compile(
 )
 _AUDIT_LONG_INDIA_ID_RE = re.compile(r"(?<!\d)(?:\d[ -]?){11,13}\d(?!\d)")
 _AUDIT_METADATA_IDENTIFIER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,127}$")
+# A bare digest is never an identifier, but its hex can hold a 12-14 digit run
+# that the long-ID pattern would redact, changing the value on every re-read.
+_AUDIT_DIGEST_RE = re.compile(r"(?:redacted:)?(?:hmac-)?sha256:[0-9a-f]{64}")
 _AUDIT_RISK_CATEGORIES = frozenset(
     {
         "age",
@@ -696,7 +699,11 @@ def _sanitize_audit_value(value: Any) -> Any:
         return [_sanitize_audit_value(item) for item in value]
     if isinstance(value, tuple):
         return [_sanitize_audit_value(item) for item in value]
-    if isinstance(value, str) and _contains_sensitive_india_identifier(value):
+    if (
+        isinstance(value, str)
+        and not _AUDIT_DIGEST_RE.fullmatch(value)
+        and _contains_sensitive_india_identifier(value)
+    ):
         return f"redacted:{hash_text(value)}"
     return copy.deepcopy(value)
 

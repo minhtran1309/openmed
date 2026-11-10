@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir "$(ls /tmp/wheels/*.whl)[service]" \
 
 EXPOSE 8080
 
+# The service refuses to start without OPENMED_AUDIT_KEY (the HMAC key that
+# signs every /v1/apply audit), so the health check below only passes when the
+# container is run with it: docker run -e OPENMED_AUDIT_KEY=... . The key is
+# never baked into the image.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import sys,urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3); sys.exit(0)"
 

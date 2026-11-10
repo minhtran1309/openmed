@@ -212,8 +212,15 @@ class SafeHarborAttestation:
         )
 
 
+_SHIFT_REASON: Final = (
+    "Date shifting is not Safe Harbor removal; qualified expert review is required."
+)
+
+
 def generate_safe_harbor_attestation(
     audit_report: Any,
+    *,
+    any_policy: bool = False,
 ) -> SafeHarborAttestation:
     """Generate an attestation from an audit report or compatible mapping.
 
@@ -227,6 +234,21 @@ def generate_safe_harbor_attestation(
     fields, ``evidence``, or ``metadata``. ``regulatory_tags`` are also
     supported. This lets specialized detectors distinguish categories such as
     fax numbers while preserving the canonical ``PHONE`` label.
+
+    A category with any ``shift`` action is a residual-risk item: date
+    shifting is not Safe Harbor removal.
+
+    Args:
+        audit_report: An ``AuditReport`` or compatible mapping.
+        any_policy: When ``False`` (the default) the report must use the
+            ``hipaa_safe_harbor`` policy and every span must map to a Safe
+            Harbor category. When ``True`` any policy is accepted, its own
+            profile supplies ``policy_actions``, and spans whose label has
+            no Safe Harbor category (clinical labels such as ``DISEASE``)
+            are skipped.
+
+    Returns:
+        The aggregate attestation.
     """
 
     payload = _report_payload(audit_report)
@@ -238,7 +260,7 @@ def generate_safe_harbor_attestation(
     if not policy_name:
         raise ValueError("audit report must identify its de-identification policy")
     profile = load_policy(policy_name)
-    if profile.name != SAFE_HARBOR_POLICY:
+    if not any_policy and profile.name != SAFE_HARBOR_POLICY:
         raise ValueError(
             "Safe Harbor attestations require the hipaa_safe_harbor policy"
         )
@@ -251,7 +273,11 @@ def generate_safe_harbor_attestation(
 
     for span in spans:
         canonical_label = _canonical_span_label(span)
-        category = _explicit_span_category(span) or LABEL_TO_HIPAA[canonical_label]
+        category = _explicit_span_category(span)
+        if category is None:
+            if any_policy and canonical_label not in LABEL_TO_HIPAA:
+                continue
+            category = LABEL_TO_HIPAA[canonical_label]
         action = str(_span_value(span, "action", "") or "")
         if not action:
             action = profile.action_for(canonical_label)
@@ -298,6 +324,8 @@ def _category_attestation(
             "One or more detections used the keep action; qualified expert "
             "review is required."
         )
+    if action_counts.get("shift", 0):
+        reasons.append(_SHIFT_REASON)
     return SafeHarborCategoryAttestation(
         ordinal=ordinal,
         category=category,

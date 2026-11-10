@@ -35,6 +35,7 @@ ErrorCode = Literal[
     "DATE_SHIFT_KEY_REQUIRED",
     "DETECT_FAILED",
     "APPLY_FAILED",
+    "AUDIT_KEY_MISSING",
 ]
 assert tuple(ErrorCode.__args__) == ERROR_CODES  # type: ignore[attr-defined]
 
@@ -162,6 +163,8 @@ class ApplySpanIn(BaseModel):
     inside a grapheme cluster is rendered as given. ``segment_id`` is
     optional and, when given, must name the enclosing segment. ``subtype`` and
     ``replacement`` are accepted; ``replacement`` is ignored under ``mark``.
+    ``source`` and ``score`` are copied from the detect findings into the
+    audit (``sources`` and ``confidence``); rendering ignores them.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -172,6 +175,8 @@ class ApplySpanIn(BaseModel):
     subtype: StrictStr | None = None
     replacement: StrictStr | None = None
     segment_id: StrictStr | None = None
+    source: Literal["model", "pattern", "table-column", "manual"] | None = None
+    score: float | None = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
 
 
 class ApplySegmentIn(BaseModel):
@@ -242,13 +247,20 @@ class ApplyProvenance(BaseModel):
 
 
 class ApplyResponse(BaseModel):
-    """Response of ``POST /v1/apply``. Carries no original span text."""
+    """Response of ``POST /v1/apply``. Carries no original span text.
+
+    ``audit`` is the signed ``AuditReport`` for this render and
+    ``attestation`` the Safe Harbor attestation built from it; neither
+    carries span text, surrogates, context, keys, secrets or offset days.
+    """
 
     model_config = ConfigDict(extra="forbid")
     segments: list[ApplySegmentOut]
     spans: list[ApplySpanOut]
     merges: list[ApplyMerge]
     provenance: ApplyProvenance
+    audit: dict[str, Any]
+    attestation: dict[str, Any]
 
 
 class ErrorResponse(BaseModel):

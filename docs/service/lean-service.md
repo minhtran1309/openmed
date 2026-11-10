@@ -5,6 +5,27 @@ identifiers in caller-supplied text segments. Every non-200 response has the
 body `{"error_code": CODE}` only; request text, span text, patient keys and
 secrets are never echoed or logged.
 
+The service needs `OPENMED_AUDIT_KEY`, the HMAC key that signs every
+`/v1/apply` audit. It refuses to start when the variable is unset or blank:
+startup fails with `AUDIT_KEY_MISSING` and uvicorn exits non-zero. Use at least
+32 random bytes (for example `openssl rand -hex 32`). The key is used
+verbatim, byte for byte, including any whitespace or trailing newline, and
+the verifier must use exactly the same bytes. Store the key file without a
+trailing newline and read it the same way on both sides:
+
+```bash
+openssl rand -hex 32 | tr -d '\n' > openmed-audit-key   # no trailing newline
+chmod 600 openmed-audit-key
+```
+
+```python
+key = Path("openmed-audit-key").read_text(encoding="utf-8")  # same bytes
+```
+
+If a file may carry a newline, strip it consistently in both places (the
+service sees what the environment holds; `"$(cat file)"` in a shell drops
+trailing newlines, while `open(file).read()` keeps them).
+
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` | Liveness probe, `{"status": "ok"}` |
@@ -26,13 +47,17 @@ rejects unknown fields.
 Error codes: `INVALID_REQUEST`, `INTERNAL_ERROR`, `NOT_FOUND`, `UNKNOWN_POLICY`,
 `EMPTY_DOCUMENT`, `DUPLICATE_SEGMENT_ID`, `UNKNOWN_SEGMENT_ID`,
 `SPAN_OUT_OF_RANGE`, `SPAN_INVERTED`, `UNKNOWN_LABEL`, `UNSUPPORTED_TREATMENT`,
-`DATE_SHIFT_KEY_REQUIRED`, `DETECT_FAILED`, `APPLY_FAILED`.
+`DATE_SHIFT_KEY_REQUIRED`, `DETECT_FAILED`, `APPLY_FAILED`,
+`AUDIT_KEY_MISSING`.
 
-`NOT_FOUND` and `UNKNOWN_POLICY` are 404; `INTERNAL_ERROR`, `DETECT_FAILED` and
-`APPLY_FAILED` are 500; every other code is 400. Request validation failures
-(bad JSON, missing or extra fields, wrong types) are `INVALID_REQUEST` with
-status 400. Any other framework 4xx, for example 405 for a wrong method, is
-also reported as `INVALID_REQUEST` but keeps its original status code.
+`NOT_FOUND` and `UNKNOWN_POLICY` are 404; `INTERNAL_ERROR`, `DETECT_FAILED`,
+`APPLY_FAILED` and `AUDIT_KEY_MISSING` are 500; every other code is 400.
+`AUDIT_KEY_MISSING` is returned by `/v1/apply` only when an app was started
+without its startup check (for example in tests) and the key is missing.
+Request validation failures (bad JSON, missing or extra fields, wrong types)
+are `INVALID_REQUEST` with status 400. Any other framework 4xx, for example
+405 for a wrong method, is also reported as `INVALID_REQUEST` but keeps its
+original status code.
 
 ## Provenance and coverage
 
@@ -97,7 +122,10 @@ give exactly the same response as before; only table-column findings carry
 
 `POST /v1/apply` takes a `document` of segments, each with its `text` and the
 caller-recorded `spans` (`span_id`, `start`, `end`, canonical `label`, optional
-`subtype`), plus `treatment` and `policy`. It never detects. Labels must be
+`subtype`, and optional `source` and `score` copied from the detect findings),
+plus `treatment` and `policy`. It never detects. `source` is one of `model`,
+`pattern`, `table-column` or `manual`, and `score` lies in `[0, 1]`; both only
+feed the audit and never change the rendering. Labels must be
 canonical (`MEDICARE_NUMBER`, not `medicare`); anything else is
 `UNKNOWN_LABEL`.
 
@@ -111,14 +139,113 @@ shifted day-first dates; pass `offset_days`, or `patient_key` with `secret`, or
 the request is `DATE_SHIFT_KEY_REQUIRED` when a shift is needed. A date that
 cannot be parsed, or a non-date label with a `shift` action, is masked. The
 response carries the rendered segments, per-span actions in output
-coordinates, merges of overlapping spans and the policy fingerprint.
+coordinates, merges of overlapping spans, the policy fingerprint, a signed
+`audit` and a Safe Harbor `attestation`.
+
+### Audit
+
+`audit` is an openmed `AuditReport` for this render, signed with
+`OPENMED_AUDIT_KEY` (`signature.key_id` is `openmed-lean`, `algorithm`
+`HMAC-SHA256`). Store it beside the rendered output.
+
+- **Join rule.** Segments are joined with a single `"\n"` in document order.
+  `input_hash` is `hmac-sha256:` plus the lowercase HMAC-SHA256 hex, under the
+  audit key, of the UTF-8 joined request texts. It is keyed because the audit
+  is released beside the output: an unkeyed hash of the input would let anyone
+  holding both brute-force masked names and the date-shift offset.
+  `deidentified_text_hash` is `sha256:` plus the plain SHA-256 hex of the
+  joined response `segments[].text`, so anyone can check the output against
+  it. `document_length` is the joined output length in code points. Because
+  a segment may itself contain `"\n"`,
+  `resolved_profile.segments` records `segment_id`, `input_length` and
+  `output_length` for every segment.
+- **Spans.** One entry per rendered span (a merged overlap is one entry).
+  `start`/`end` are code-point offsets into the joined output. `action` is
+  `mask` (apply's `mark`), `shift` or `keep`; `evidence` holds `span_id`,
+  `segment_id`, `apply_action` and `merged_span_ids`. `sources` is the
+  request `source` (or `caller`), `confidence` the request `score` (or `1.0`),
+  and `threshold` is `0.0`. `text_hash` is `hmac-sha256:` plus the
+  HMAC-SHA256 hex, under the audit key, of the source text covered by the span
+  and its merged spans; it is keyed so short identifiers and source dates
+  cannot be brute-forced. `surrogate` is always `null` and `context` `{}`.
+- **Profile and provenance.** `policy` is the request policy;
+  `resolved_profile` is the policy profile plus `treatment`,
+  `policy_fingerprint` and `segments`. `detectors` lists one entry per span
+  source, `safety_sweep` is `{"enabled": false}`, and `residual_risk` holds
+  `keep_span_count` and `shift_span_count`.
+- **Never recorded.** Span text, surrogates, context, the patient key, the
+  secret, the offset days and which shift mode was used. A keyed and an
+  explicit-offset render with the same offset give identical audits.
+- **Caller ids.** `span_id` and `segment_id` are copied into `evidence` and
+  `resolved_profile.segments`, so they must be opaque and must never carry
+  PHI. The audit sanitiser may replace an id that looks like a long numeric
+  identifier (for example a UUID whose last group is 12 digits) with
+  `redacted:sha256:…`, while `body.spans` keeps it raw. Map audit spans to
+  response spans by offsets (audit `start`/`end` against the joined output,
+  or `body.spans[].out_start`/`out_end` plus the segment's base offset), not
+  by echoing `span_id`.
+
+### Canonical serialisation
+
+A verifier needs only the key and a standard JSON library. Let `C(x)` be
+
+```python
+json.dumps(x, sort_keys=True, separators=(",", ":"),
+           ensure_ascii=True, allow_nan=False).encode("utf-8")
+```
+
+Then, over the `audit` object exactly as received:
+
+- `signature.value` is the lowercase hex of
+  `HMAC-SHA256(key, C(audit without "signature"))`;
+- `repro_hash` is `"sha256:"` plus the lowercase SHA-256 hex of
+  `C(audit without "signature" and "repro_hash")`;
+- `input_hash` is `"hmac-sha256:"` plus the lowercase hex of
+  `HMAC-SHA256(key, "\n".join(request segment texts).encode("utf-8"))`, so
+  recompute it with the key, not with plain SHA-256;
+- `deidentified_text_hash` is `"sha256:"` plus the lowercase SHA-256 hex of
+  `"\n".join(response segment texts).encode("utf-8")`.
+
+`signature.key_id` and `signature.algorithm` are not covered by the HMAC. A
+verifier must itself check that `signature.algorithm == "HMAC-SHA256"` (and,
+if it keeps several keys, pick the key by `key_id`) before trusting the value.
+
+Floats use Python's `json` form (`1.0`, not `1`), and that form is part of the
+contract. A verifier in another language must parse the numbers back into
+the same textual form. In Python, `AuditReport.from_dict(audit).verify(key,
+deidentified_text="\n".join(texts))` checks the signature and the output hash
+together. Do not pass `original_text=`: that compares a plain SHA-256 with the
+keyed `input_hash` and always fails.
+
+Verify with openmed 3.2.0-mt.2 or later, or with the stdlib routine above.
+mt.2 stopped the audit sanitiser from redacting digest values (`sha256:…`,
+`hmac-sha256:…`) that happen to contain a long run of digits. Earlier openmed
+releases still redact them when re-reading a report, so they reject new audits
+holding such a digest, which includes every `ccia_l1` audit (its policy
+fingerprint has one). Reports signed by earlier releases still verify under
+mt.2.
+
+### Attestation
+
+`attestation` comes from
+`generate_safe_harbor_attestation(audit, any_policy=True)`. It lists all 18
+HIPAA Safe Harbor categories in regulatory order, each with
+`detection_count`, `applied_action_counts`, the request policy's actions for
+the mapped labels and `residual_risk`. Spans whose label has no Safe Harbor
+category (clinical labels such as `DISEASE`) are in the audit but not counted.
+Any `keep` or `shift` action makes its category a residual-risk item: date
+shifting is not Safe Harbor removal. `source_report_hash` equals the audit's
+`repro_hash`, so the attestation cannot be paired with another render. The
+attestation is evidence from one run, not a certification.
 
 ## Selftest
 
 `POST /v1/selftest` (empty body) runs a fixed synthetic probe through detect
 (`ccia_l3`) then apply (`mark`, `ccia_l1`, fixed offset) and returns
 `checks`, a map of `medicare`, `abn`, `phone`, `date_shift`, `person_tag` and
-`year_tag` to `pass` or `fail`. `person_tag` passes when the probe name renders
+`year_tag` to `pass` or `fail`. The selftest builds no audit, but the service
+it runs in still needs `OPENMED_AUDIT_KEY` to start.
+`person_tag` passes when the probe name renders
 as `[PERSON_1]` or as `[PERSON_FN_1] [PERSON_LN_1]`. The probe text must stay identical to the
 consumer's copy.
 
@@ -159,8 +286,14 @@ Image via `docker save` / `docker load`:
 ```bash
 docker save openmed-lean:v3.2.0-mt.1 -o openmed-lean.tar     # build host
 docker load -i openmed-lean.tar                              # target host
-docker run --rm -p 8080:8080 openmed-lean:v3.2.0-mt.1
+docker run --rm -p 8080:8080 \
+  -e OPENMED_AUDIT_KEY="$(cat /path/to/openmed-audit-key)" \
+  openmed-lean:v3.2.0-mt.1
 curl localhost:8080/health
 ```
+
+The image will not start without `-e OPENMED_AUDIT_KEY`: the container exits
+with `AUDIT_KEY_MISSING`, so the health check never passes. The consumer needs
+the same key to verify each audit; keep it as a third root-only secret.
 
 A local registry works the same way (`docker tag` then `docker push`).

@@ -33,6 +33,7 @@ ERROR_CODES: tuple[str, ...] = (
     "DATE_SHIFT_KEY_REQUIRED",
     "DETECT_FAILED",
     "APPLY_FAILED",
+    "AUDIT_KEY_MISSING",
 )
 
 _STATUS: dict[str, int] = {
@@ -41,6 +42,7 @@ _STATUS: dict[str, int] = {
     "INTERNAL_ERROR": 500,
     "DETECT_FAILED": 500,
     "APPLY_FAILED": 500,
+    "AUDIT_KEY_MISSING": 500,
 }
 
 

@@ -294,3 +294,67 @@ def test_cli_rejects_invalid_audit_input(
 
     assert result == 1
     assert "Failed to generate Safe Harbor attestation." in capsys.readouterr().err
+
+
+def _ccia_report(policy: str = "ccia_l1") -> AuditReport:
+    spans = [
+        _span(start=0, surface=SYNTHETIC_NAME, label="PERSON"),
+        _span(start=20, surface="synthetic-date", label="DATE", action="shift"),
+        _span(start=40, surface="synthetic-group", label="ETHNICITY", action="keep"),
+        _span(start=60, surface="asthma", label="DISEASE", action="keep"),
+    ]
+    report = _audit_report()
+    report.policy = policy
+    report.spans = spans
+    report.repro_hash = report.recompute_repro_hash()
+    return report
+
+
+def test_any_policy_accepts_ccia_audit() -> None:
+    report = generate_safe_harbor_attestation(_ccia_report(), any_policy=True)
+    categories = _categories(report)
+
+    assert report.policy == "ccia_l1"
+    assert [c.category for c in report.categories] == list(SAFE_HARBOR_CATEGORY_ORDER)
+    # DISEASE has no Safe Harbor category and is skipped, not a KeyError.
+    assert report.total_detection_count == 3
+    assert categories["NAME"].applied_action_counts == {"mask": 1}
+    assert categories["NAME"].policy_actions["PERSON"] == "mask"
+    # policy_actions come from the report's own profile.
+    assert categories["DATE_ELEMENT"].policy_actions["DATE"] == "shift"
+    unique = categories["UNIQUE_IDENTIFIER"]
+    assert unique.applied_action_counts == {"keep": 1}
+    assert unique.residual_risk is True
+
+
+def test_default_still_rejects_non_safe_harbor_policy() -> None:
+    with pytest.raises(ValueError, match="hipaa_safe_harbor policy"):
+        generate_safe_harbor_attestation(_ccia_report())
+    with pytest.raises(KeyError):
+        generate_safe_harbor_attestation(
+            {
+                "policy": "hipaa_safe_harbor",
+                "spans": [{"canonical_label": "DISEASE", "action": "mask"}],
+            }
+        )
+
+
+def test_shift_action_is_residual_risk() -> None:
+    report = generate_safe_harbor_attestation(_ccia_report(), any_policy=True)
+    date = _categories(report)["DATE_ELEMENT"]
+
+    assert date.applied_action_counts == {"shift": 1}
+    assert date.residual_risk is True
+    assert date.residual_risk_reason == (
+        "Date shifting is not Safe Harbor removal; qualified expert review is required."
+    )
+
+    default = generate_safe_harbor_attestation(
+        {
+            "policy": "hipaa_safe_harbor",
+            "spans": [{"canonical_label": "DATE", "action": "shift"}],
+        }
+    )
+    assert _categories(default)["DATE_ELEMENT"].residual_risk is True
+    unshifted = generate_safe_harbor_attestation(_audit_report())
+    assert _categories(unshifted)["DATE_ELEMENT"].residual_risk is False
