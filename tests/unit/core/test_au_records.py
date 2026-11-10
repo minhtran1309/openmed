@@ -190,6 +190,20 @@ def test_labelled_record_number_is_au_ur(label, value, separator):
         "Episode Number:",
         "Episode #",
         "U.R.:",
+        "Accession No:",
+        "Accession No.",
+        "Accession No.:",
+        "Accession No",
+        "Accession Number:",
+        "Accession number",
+        "ACCESSION NO:",
+        "Accession #",
+        "Hospital Number:",
+        "Lab Number:",
+        "Specimen Number",
+        "Specimen No:",
+        "Patient ID No:",
+        "Patient ID Number",
     ],
 )
 def test_abbreviated_and_prose_labels_with_explicit_separator(label):
@@ -224,6 +238,9 @@ def test_short_labels_are_case_sensitive(label):
         "Episode 12345 noted.",
         "Visit 2019 planned.",
         "UR. 2019 was worse.",
+        "Accession. 12345678 was late.",
+        "Accession numbers 12345678 pending.",
+        "Lab Nos 12345678 pending.",
     ],
 )
 def test_prose_years_and_counts_are_not_ur(text):

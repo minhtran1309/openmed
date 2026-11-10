@@ -429,6 +429,59 @@ def test_production_detector_path_preserves_whitespace(monkeypatch) -> None:
     assert text[finding["start"] : finding["end"]] == MEDICARE
 
 
+class _NameFindingLoader:
+    """Shared-loader stand-in whose model finds ``SYNTHETIC_NAME``.
+
+    Offsets index the exact text the model is called with, as a real
+    tokenizer-backed pipeline's do; the real ``analyze_text`` runs around it.
+    """
+
+    def create_pipeline(self, *_args, **_kwargs):
+        def ner(text, **_call_kwargs):
+            if isinstance(text, list):
+                return [ner(item) for item in text]
+            start = text.find(SYNTHETIC_NAME)
+            if start < 0:
+                return []
+            return [
+                {
+                    "word": SYNTHETIC_NAME,
+                    "entity_group": "NAME",
+                    "score": 0.97,
+                    "start": start,
+                    "end": start + len(SYNTHETIC_NAME),
+                }
+            ]
+
+        return ner
+
+    def get_max_sequence_length(self, *_args, **_kwargs):
+        return 512
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"   Patient {SYNTHETIC_NAME} was seen.",
+        f"\n  Patient {SYNTHETIC_NAME} was seen.\n",
+        f"\t Patient  \n\n {SYNTHETIC_NAME} was seen.",
+    ],
+)
+def test_default_model_path_offsets_survive_leading_whitespace(
+    monkeypatch, text
+) -> None:
+    """Model spans index the sent text even when it starts with whitespace."""
+    monkeypatch.setattr(detect_module, "_LOADER", None)
+    monkeypatch.setattr(detect_module, "_make_loader", _NameFindingLoader)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = _detect(client, [_seg("ws", text)])
+
+    assert response.status_code == 200
+    findings = response.json()["findings"]
+    assert [text[f["start"] : f["end"]] for f in findings] == [SYNTHETIC_NAME]
+
+
 def test_missing_span_score_is_reported_as_one(client, monkeypatch) -> None:
     import dataclasses
 

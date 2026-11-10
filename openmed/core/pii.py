@@ -703,6 +703,36 @@ def _mutable_prediction_result(result: Any) -> Any:
     )
 
 
+def _rebase_onto_inference_text(result: Any, inference_text: str) -> Any:
+    """Re-index a model result onto the exact text it was asked to analyse.
+
+    ``analyze_text`` validates its input through the shared gateway, which
+    strips leading and trailing whitespace, so its entity offsets index
+    ``inference_text.strip()``. With ``preserve_whitespace`` the inference text
+    keeps its leading whitespace, and every later step (smart merging and the
+    normalization remap) indexes ``inference_text``. Shift the offsets by the
+    stripped leading run so both agree.
+    """
+    model_text = getattr(result, "text", None)
+    if not isinstance(model_text, str) or model_text == inference_text:
+        return result
+    leading = len(inference_text) - len(inference_text.lstrip())
+    if not leading or (
+        inference_text[leading : leading + len(model_text)] != model_text
+    ):
+        return result
+
+    entities = [
+        replace(
+            entity,
+            start=None if entity.start is None else int(entity.start) + leading,
+            end=None if entity.end is None else int(entity.end) + leading,
+        )
+        for entity in result.entities
+    ]
+    return _replace_analysis_result(result, text=inference_text, entities=entities)
+
+
 def _remap_prepared_pii_result(result: Any, prepared: _PreparedPIIText) -> Any:
     """Map normalized inference spans back to the original input text."""
     normalization = prepared.detection_normalization
@@ -1259,6 +1289,7 @@ def _extract_pii_batch(
             if budget_clock is not None:
                 budget_clock.check("extract_pii.batch_item_complete")
             result = _mutable_prediction_result(result)
+            result = _rebase_onto_inference_text(result, item.inference_text)
             results.append(result)
 
     indian_multi_id_enabled = abdm_mode_enabled(

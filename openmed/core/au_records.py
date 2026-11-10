@@ -27,8 +27,11 @@ Design rules:
   group.
 * The short labels ``UR``, ``URN``, ``U.R.`` and ``MRN`` are case-sensitive;
   the multi-word labels (``Hospital No``, ``Lab No`` ...) and ``Accession``
-  are case-insensitive. ``UR No`` wins over ``UR``. A label never starts or
-  ends inside a longer word (``your``, ``Urgent``).
+  are case-insensitive. ``Hospital``, ``Lab`` and ``Specimen`` take ``No``,
+  ``No.`` or ``Number``; ``Accession`` and ``Patient ID`` take one
+  optionally (``Accession No: 12345678``, ``Patient ID Number 12345``).
+  ``UR No`` wins over ``UR``. A label never starts or ends inside a longer
+  word (``your``, ``Urgent``).
 * ``Episode`` and ``Visit`` count only before an explicit ``:``, ``#``,
   ``No`` or ``Number`` (``Episode No: 12345``), so ``prior episode 2019`` is
   not a record number.
@@ -125,12 +128,18 @@ AU_RECORD_CONTEXT_WORDS: tuple[str, ...] = (
 
 
 _NO = r"(?i:No\.?)"
+# ``No``, ``No.`` or ``Number`` after a multi-word field label.
+_NUMBER_WORD = rf"(?:Number|{_NO})"
 # Short labels: case-sensitive, so prose ``ur``/``mrn`` never counts.
 _SHORT_LABELS = rf"UR[ \t]+{_NO}|URN|U\.R\.|UR|MRN"
-# Multi-word labels: case-insensitive.
+# Multi-word labels: case-insensitive. ``Hospital``, ``Lab`` and ``Specimen``
+# need the number word; ``Accession`` and ``Patient ID`` take it optionally.
 _FIELD_LABELS = (
-    rf"(?i:Hospital[ \t]+{_NO}|Patient[ \t]+ID|Lab[ \t]+{_NO}"
-    rf"|Specimen[ \t]+{_NO}|Accession)"
+    rf"(?i:Hospital[ \t]+{_NUMBER_WORD}"
+    rf"|Patient[ \t]+ID(?:[ \t]+{_NUMBER_WORD})?"
+    rf"|Lab[ \t]+{_NUMBER_WORD}"
+    rf"|Specimen[ \t]+{_NUMBER_WORD}"
+    rf"|Accession(?:[ \t]+{_NUMBER_WORD})?)"
 )
 # ``Episode`` and ``Visit`` are common prose words, so they count only before
 # an explicit ``:``/``#`` or a ``No``/``Number`` label.
@@ -315,6 +324,30 @@ _NOT_PERSON_NAME_NOUNS = (
     "department",
     "service",
     "site",
+    # Imaging, nuclear medicine, laboratory and report-template nouns.
+    "scanner",
+    "contrast",
+    "protocol",
+    "sequence",
+    "modality",
+    "equipment",
+    "machine",
+    "agent",
+    "tracer",
+    "radiopharmaceutical",
+    "isotope",
+    "examination",
+    "exam",
+    "series",
+    "template",
+    "form",
+    "camera",
+    "coil",
+    "kit",
+    "instrument",
+    "analyser",
+    "analyzer",
+    "station",
 )
 # Python look-behinds are fixed width, so there is one per noun.
 _NOT_AFTER_NOUN = "".join(rf"(?<!(?i:{noun})[ \t])" for noun in _NOT_PERSON_NAME_NOUNS)
