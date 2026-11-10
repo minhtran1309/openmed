@@ -536,8 +536,34 @@ def test_adjacent_spans_do_not_merge() -> None:
         )
     ]
     result = _apply(doc)
-    assert result.segments[0]["text"] == "[FIRST_NAME_1][LAST_NAME_1]"
+    assert result.segments[0]["text"] == "[PERSON_FN_1][PERSON_LN_1]"
     assert result.merges == []
+
+
+def test_name_parts_render_as_person_part_tags_numbered_per_part() -> None:
+    text = "Jane Citizen, John Q Smith, Mary Citizen, Jane, Ari Volk"
+    doc = [
+        _seg(
+            "s",
+            text,
+            [
+                _span("f1", text, "Jane", "FIRST_NAME"),
+                _span("l1", text, "Citizen", "LAST_NAME"),
+                _span("f2", text, "John", "FIRST_NAME"),
+                _span("m2", text, "Q", "MIDDLE_NAME"),
+                _span("l2", text, "Smith", "LAST_NAME"),
+                _span("f3", text, "Mary", "FIRST_NAME"),
+                _span("l3", text, "Citizen", "LAST_NAME", occurrence=1),
+                _span("f4", text, "Jane", "FIRST_NAME", occurrence=1),
+                _span("p5", text, "Ari Volk", "PERSON"),
+            ],
+        )
+    ]
+    result = _apply(doc)
+    assert result.segments[0]["text"] == (
+        "[PERSON_FN_1] [PERSON_LN_1], [PERSON_FN_2] [PERSON_MN_1] [PERSON_LN_2], "
+        "[PERSON_FN_3] [PERSON_LN_1], [PERSON_FN_1], [PERSON_1]"
+    )
 
 
 def test_provenance_carries_version_and_fingerprint() -> None:

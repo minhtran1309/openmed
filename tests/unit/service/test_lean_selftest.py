@@ -268,6 +268,19 @@ def test_evaluate_checks_all_pass() -> None:
 
 
 @pytest.mark.parametrize(
+    "person",
+    ["[PERSON_1]", "[PERSON_FN_1] [PERSON_LN_1]"],
+)
+def test_person_tag_passes_for_whole_name_or_name_part_tags(person) -> None:
+    output = f"Patient {person}, seen 14/07/2023, diagnosed [DATE_1]."
+    checks = selftest_module.evaluate_checks(
+        _good_findings(), output, shifted_date="14/07/2023"
+    )
+
+    assert checks["person_tag"] == "pass"
+
+
+@pytest.mark.parametrize(
     ("name", "findings", "output"),
     [
         (
@@ -304,6 +317,16 @@ def test_evaluate_checks_all_pass() -> None:
             "person_tag",
             _good_findings(),
             "Patient [PERSON_1] Citizen, seen 14/07/2023, diagnosed [DATE_1].",
+        ),
+        (
+            "person_tag",
+            _good_findings(),
+            "Patient [PERSON_FN_1] Citizen, seen 14/07/2023, diagnosed [DATE_1].",
+        ),
+        (
+            "person_tag",
+            _good_findings(),
+            "Patient Jane [PERSON_LN_1], seen 14/07/2023, diagnosed [DATE_1].",
         ),
         (
             "year_tag",

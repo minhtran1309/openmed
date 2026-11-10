@@ -96,9 +96,13 @@ def evaluate_checks(
         "abn": found("AU_ABN", _ABN),
         "phone": found("AU_PHONE", _PHONE),
         "date_shift": shifted_date in output_text and _FULL_DATE not in output_text,
-        # The whole name must be tagged in place; a partial tag leaves a part.
+        # The whole name must be tagged in place, as one PERSON tag or as
+        # first- and last-name part tags; a partial tag leaves a part.
         "person_tag": (
-            "Patient [PERSON_1]," in output_text
+            (
+                "Patient [PERSON_1]," in output_text
+                or "Patient [PERSON_FN_1] [PERSON_LN_1]," in output_text
+            )
             and "Jane" not in output_text
             and "Citizen" not in output_text
         ),

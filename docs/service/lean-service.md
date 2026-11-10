@@ -78,7 +78,10 @@ canonical (`MEDICARE_NUMBER`, not `medicare`); anything else is
 `UNKNOWN_LABEL`.
 
 In mt.1 only the `mark` treatment is implemented: masked spans become
-`[LABEL_n]` tags. `replace`, `generalise` and `keep` are accepted by the schema
+`[LABEL_n]` tags. Name parts keep a `PERSON` prefix: `FIRST_NAME`,
+`MIDDLE_NAME` and `LAST_NAME` render as `[PERSON_FN_n]`, `[PERSON_MN_n]` and
+`[PERSON_LN_n]`, each numbered per part by value, so a shared surname keeps one
+number. A whole-name `PERSON` span stays `[PERSON_n]`. `replace`, `generalise` and `keep` are accepted by the schema
 and return `UNSUPPORTED_TREATMENT`. Spans whose policy action is `shift` are
 shifted day-first dates; pass `offset_days`, or `patient_key` with `secret`, or
 the request is `DATE_SHIFT_KEY_REQUIRED` when a shift is needed. A date that
@@ -91,7 +94,8 @@ coordinates, merges of overlapping spans and the policy fingerprint.
 `POST /v1/selftest` (empty body) runs a fixed synthetic probe through detect
 (`ccia_l3`) then apply (`mark`, `ccia_l1`, fixed offset) and returns
 `checks`, a map of `medicare`, `abn`, `phone`, `date_shift`, `person_tag` and
-`year_tag` to `pass` or `fail`. The probe text must stay identical to the
+`year_tag` to `pass` or `fail`. `person_tag` passes when the probe name renders
+as `[PERSON_1]` or as `[PERSON_FN_1] [PERSON_LN_1]`. The probe text must stay identical to the
 consumer's copy.
 
 ## Known gaps in mt.1

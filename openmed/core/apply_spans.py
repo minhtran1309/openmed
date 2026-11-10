@@ -19,7 +19,10 @@ Rendering rules under ``mark``:
 * Every other action, including ``shift`` on a non-date label, renders a
   numbered tag ``[LABEL_n]``. Numbers are assigned per label by first
   appearance across the whole document, matching values casefolded with
-  whitespace collapsed, and restart on every call.
+  whitespace collapsed, and restart on every call. Name parts render under a
+  ``PERSON`` prefix with their own counters: ``FIRST_NAME`` as
+  ``[PERSON_FN_n]``, ``MIDDLE_NAME`` as ``[PERSON_MN_n]`` and ``LAST_NAME`` as
+  ``[PERSON_LN_n]``; ``PERSON`` stays ``[PERSON_n]``.
 
 Overlapping spans in a segment form a cluster. The kept span has the earliest
 start, then the greatest length, then the strongest action, then the earliest
@@ -468,11 +471,20 @@ def _render(
     return _ACTION_MARK, _tag(cluster.kept.label, source, numbering)
 
 
+# Tag text for name parts, so a split name still reads as one person's parts.
+_TAG_NAMES: dict[str, str] = {
+    "FIRST_NAME": "PERSON_FN",
+    "MIDDLE_NAME": "PERSON_MN",
+    "LAST_NAME": "PERSON_LN",
+}
+
+
 def _tag(label: str, source: str, numbering: dict[str, dict[str, int]]) -> str:
+    name = _TAG_NAMES.get(label, label)
     key = " ".join(source.split()).casefold()
-    numbers = numbering.setdefault(label, {})
+    numbers = numbering.setdefault(name, {})
     number = numbers.setdefault(key, len(numbers) + 1)
-    return f"[{label}_{number}]"
+    return f"[{name}_{number}]"
 
 
 # ---------------------------------------------------------------------------
