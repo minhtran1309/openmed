@@ -164,6 +164,23 @@ def test_au_values_end_to_end(
     assert finding["policy_class"] == policy_class
 
 
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("URN: 0012345 admitted.", "0012345"),
+        (f"Accession {TFN} received.", TFN),
+    ],
+)
+def test_detect_ur_number_returns_au_ur(client, text, value) -> None:
+    findings = _detect(client, [_seg("s", text)]).json()["findings"]
+
+    finding = _single(findings, "AU_UR")
+    start = text.index(value)
+    assert (finding["start"], finding["end"]) == (start, start + len(value))
+    assert finding["label"] == "ID_NUM"
+    assert not _by_subtype(findings, "AU_TFN")
+
+
 def test_policy_class_comes_from_label_metadata(client) -> None:
     from openmed.core.labels import LABEL_METADATA
 
