@@ -162,7 +162,7 @@
     "schema_version": 1
   },
   "span": {
-    "fingerprint": "sha256:bf84e0deb571bd89ecdcd90cf0d9144822645c659531c3a8ab390b23a6853089",
+    "fingerprint": "sha256:25d1682e8e91f908cfaa88244522948a12a3f28c293364248f0b4eb81e382112",
     "properties": [
       "action",
       "canonical_label",

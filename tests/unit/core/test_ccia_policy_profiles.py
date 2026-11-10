@@ -73,16 +73,17 @@ L2_ADDED_LABELS = frozenset(
 # Stock profile fingerprints: adding the ccia profiles and the
 # ``implied_locale`` field must not change any existing profile. Re-pinned when
 # the AU canonical ID labels (MEDICARE_NUMBER, TFN, IHI, ABN, ACN) were added
-# to every profile next to ``SSN`` with ``SSN``'s action.
+# to every profile next to ``SSN`` with ``SSN``'s action, and again for the
+# ticket 05 labels (AHPRA_NUMBER, DVA_NUMBER, MEDICARE_PROVIDER_NUMBER).
 STOCK_FINGERPRINTS = {
     "hipaa_safe_harbor": (
-        "sha256:ff0e3fcb29585b2ed7ee37fbafefbfbd6543594e636bbacbb956a7033ae9e456"
+        "sha256:333d8e5cd6909c0f028755e2abf7df7f9bd206c704ae8e850f0b67f42ef2265c"
     ),
     "clinical_minimal_redaction": (
-        "sha256:4d78b30ffa79d51eac92805c5a6c2246659aee73d6687c4c18d09d84de1da435"
+        "sha256:1a03f91e8a2ea22255f2dd179d4a6228ab2ed3a2e51f89fbbe9aafccfd5fa374"
     ),
     "australia_privacy_act": (
-        "sha256:72ece604ff2c48ba5134e5e089536cbcdc78dea5e47424ad374fd218a34d2bb6"
+        "sha256:c4252e88db95ca7685b04f1a09c05ed89de1b4379aa8d650b06d8ff0c18de758"
     ),
 }
 

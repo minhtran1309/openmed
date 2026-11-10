@@ -20,7 +20,9 @@ from openmed.core.au_identifiers import (
 from openmed.core.labels import (
     CANONICAL_LABELS,
     DIRECT_IDENTIFIER,
+    HIPAA_UNIQUE_IDENTIFIER,
     LABEL_METADATA,
+    LABEL_TO_HIPAA,
     SSN,
     normalize_label,
     policy_label_for,
@@ -50,6 +52,17 @@ AU_LABELS = {
     "AU_ABN": "ABN",
     "AU_ACN": "ACN",
 }
+
+# Ticket 05 clinician and DVA identifiers (decision E6). They are canonical
+# labels with subtypes ``AHPRA`` / ``AU_DVA`` / ``AU_PROVIDER``; no recogniser
+# emits them yet, so only the taxonomy and policy tests cover them here.
+AU_CLINICIAN_LABELS = {
+    "AHPRA": "AHPRA_NUMBER",
+    "AU_DVA": "DVA_NUMBER",
+    "AU_PROVIDER": "MEDICARE_PROVIDER_NUMBER",
+}
+
+ALL_AU_LABELS = sorted({*AU_LABELS.values(), *AU_CLINICIAN_LABELS.values()})
 
 # (subtype, text, value)
 AU_CASES = [
@@ -82,11 +95,21 @@ def no_model(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("label", sorted(AU_LABELS.values()))
+@pytest.mark.parametrize("label", ALL_AU_LABELS)
 def test_au_label_is_canonical_direct_identifier(label):
     assert label in CANONICAL_LABELS
     assert LABEL_METADATA[label] == LABEL_METADATA[SSN]
     assert policy_label_for(label) == DIRECT_IDENTIFIER
+
+
+@pytest.mark.parametrize("label", ALL_AU_LABELS)
+def test_au_label_is_hipaa_unique_identifier(label):
+    assert LABEL_TO_HIPAA[label] == HIPAA_UNIQUE_IDENTIFIER
+
+
+@pytest.mark.parametrize("label", ALL_AU_LABELS)
+def test_au_label_normalizes_to_itself(label):
+    assert normalize_label(label) == label
 
 
 def test_ssn_is_unchanged():
@@ -119,6 +142,23 @@ def test_ssn_is_unchanged():
         ("ACN", "ACN"),
         ("acn", "ACN"),
         ("australian_company_number", "ACN"),
+        ("AHPRA_NUMBER", "AHPRA_NUMBER"),
+        ("ahpra", "AHPRA_NUMBER"),
+        ("ahpra_number", "AHPRA_NUMBER"),
+        ("AHPRA Registration Number", "AHPRA_NUMBER"),
+        ("ahpra_registration_number", "AHPRA_NUMBER"),
+        ("B-AHPRA_NUMBER", "AHPRA_NUMBER"),
+        ("DVA_NUMBER", "DVA_NUMBER"),
+        ("dva", "DVA_NUMBER"),
+        ("dva_number", "DVA_NUMBER"),
+        ("DVA File Number", "DVA_NUMBER"),
+        ("dva_file_number", "DVA_NUMBER"),
+        ("MEDICARE_PROVIDER_NUMBER", "MEDICARE_PROVIDER_NUMBER"),
+        ("medicare_provider_number", "MEDICARE_PROVIDER_NUMBER"),
+        ("Provider Number", "MEDICARE_PROVIDER_NUMBER"),
+        ("provider_number", "MEDICARE_PROVIDER_NUMBER"),
+        ("prescriber_number", "MEDICARE_PROVIDER_NUMBER"),
+        ("I-MEDICARE_PROVIDER_NUMBER", "MEDICARE_PROVIDER_NUMBER"),
     ],
 )
 def test_aliases_normalize_case_insensitively(alias, label):
@@ -128,6 +168,12 @@ def test_aliases_normalize_case_insensitively(alias, label):
 def test_generic_id_aliases_still_map_to_id_num():
     for alias in ("ID_NUM", "national_id", "id", "passport"):
         assert normalize_label(alias) == "ID_NUM"
+
+
+def test_medicare_card_aliases_are_not_captured_by_provider_number():
+    assert normalize_label("medicare") == "MEDICARE_NUMBER"
+    assert normalize_label("medicare_number") == "MEDICARE_NUMBER"
+    assert normalize_label("medicare_provider_number") == "MEDICARE_PROVIDER_NUMBER"
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +267,7 @@ def test_model_id_num_span_does_not_override_au_label():
 @pytest.mark.parametrize("name", ["ccia_l1", "ccia_l2", "ccia_l3"])
 def test_ccia_profiles_mask_au_labels_explicitly(name):
     profile = load_policy(name)
-    for label in AU_LABELS.values():
+    for label in ALL_AU_LABELS:
         assert profile.actions[label] == "mask"
 
 
@@ -237,7 +283,7 @@ def _explicit_label_policies():
 @pytest.mark.parametrize("name", _explicit_label_policies())
 def test_every_policy_treats_au_labels_like_ssn(name):
     profile = load_policy(name)
-    for label in AU_LABELS.values():
+    for label in ALL_AU_LABELS:
         assert profile.actions[label] == profile.actions["SSN"]
         assert profile.action_for(label) != "keep"
 
@@ -264,7 +310,7 @@ _AU_VALUES_TEXT = (
     ],
 )
 def test_non_au_locales_never_emit_au_labels(lang, locale):
-    au_labels = set(AU_LABELS.values())
+    au_labels = set(ALL_AU_LABELS)
     entities = extract_pii(
         _AU_VALUES_TEXT, model_name="fixture", lang=lang, locale=locale
     ).entities
@@ -322,7 +368,7 @@ def test_en_us_pipeline_output_is_pinned():
 
 @pytest.mark.parametrize("profile", ["balanced", "strict_no_leak"])
 @pytest.mark.parametrize("language", ["en", "de", "*"])
-@pytest.mark.parametrize("label", sorted(AU_LABELS.values()))
+@pytest.mark.parametrize("label", ALL_AU_LABELS)
 def test_au_label_thresholds_equal_id_num(label, language, profile):
     from openmed.core.thresholds import lookup_threshold
 

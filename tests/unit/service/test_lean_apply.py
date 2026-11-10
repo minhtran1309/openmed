@@ -136,6 +136,27 @@ def test_apply_marks_au_canonical_labels_and_keeps_id_num_and_ssn(
     assert {span["action"] for span in body["spans"]} == {"mark"}
 
 
+@pytest.mark.parametrize("policy", ["ccia_l1", "ccia_l2", "ccia_l3"])
+def test_apply_marks_au_clinician_and_dva_labels(client, policy) -> None:
+    # Synthetic values in the ticket 05 formats; apply never detects, so the
+    # canonical labels are given.
+    text = "AHPRA MED0001234567, DVA QAB12345, Provider No 123456AF."
+    spans = [
+        _span("a", text, "MED0001234567", "AHPRA_NUMBER", subtype="AHPRA"),
+        _span("d", text, "QAB12345", "DVA_NUMBER", subtype="AU_DVA"),
+        _span("p", text, "123456AF", "MEDICARE_PROVIDER_NUMBER", subtype="AU_PROVIDER"),
+    ]
+    response = _apply(client, [_seg("s1", text, spans)], policy=policy)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["segments"][0]["text"] == (
+        "AHPRA [AHPRA_NUMBER_1], DVA [DVA_NUMBER_1], "
+        "Provider No [MEDICARE_PROVIDER_NUMBER_1]."
+    )
+    assert {span["action"] for span in body["spans"]} == {"mark"}
+
+
 def test_apply_with_patient_key_and_secret(client) -> None:
     offset = stable_offset_for(SYNTHETIC_KEY, max_days=365, secret=SYNTHETIC_SECRET)
     keyed = _apply(client, _doc(), patient_key=SYNTHETIC_KEY, secret=SYNTHETIC_SECRET)

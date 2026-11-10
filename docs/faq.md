@@ -125,11 +125,13 @@ process. See [PII Anonymization](anonymization.md).
 
 ### Why are many national IDs grouped under `ID_NUM`?
 
-OpenMed normalizes detector-specific labels into 55 canonical identifier labels (direct and quasi-identifiers). `ID_NUM` is the canonical bucket for general
+OpenMed normalizes detector-specific labels into 58 canonical identifier labels (direct and quasi-identifiers). `ID_NUM` is the canonical bucket for general
 identifiers such as medical record numbers, national IDs, CPF/CNPJ, NIR, Steuer-ID, Codice Fiscale, DNI/NIE, BSN,
 Aadhaar, and NPI. Labels with their own canonical category, such as `SSN`, `ACCOUNT_NUMBER`, or `CREDIT_CARD`, can still
 stay separate when the detector emits them clearly. The Australian identifiers detected with `locale="en_AU"` have their
-own labels next to `SSN`: `MEDICARE_NUMBER`, `TFN`, `IHI`, `ABN`, and `ACN`, each with an `AU_*` subtype.
+own labels next to `SSN`: `MEDICARE_NUMBER`, `TFN`, `IHI`, `ABN`, and `ACN`, each with an `AU_*` subtype, plus the
+clinician and veteran identifiers `AHPRA_NUMBER`, `DVA_NUMBER`, and `MEDICARE_PROVIDER_NUMBER` (subtypes `AHPRA`,
+`AU_DVA`, and `AU_PROVIDER`).
 
 This keeps multilingual model output consistent while policy profiles can still treat identifiers as high-risk direct
 identifiers. The canonical taxonomy lives in

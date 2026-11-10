@@ -1,12 +1,12 @@
 ---
 name: extracting-pii-entities
-description: "Detect PHI/PII spans in clinical text with OpenMed's extract_pii without altering the text. Use when the user wants to find names, dates, MRNs, phone numbers, addresses, US SSNs, Australian identifiers (Medicare, TFN, IHI, ABN, ACN), or other identifiers and get their offsets and labels (not redact them), inspect what would be removed before de-identifying, route spans to a custom redactor, normalize labels to a canonical taxonomy, or filter by confidence, language and locale. Covers extract_pii, the returned entity fields, CANONICAL_LABELS / normalize_label (SSN, MEDICARE_NUMBER, TFN, IHI, ABN, ACN, ID_NUM), and how it differs from deidentify. Pairs before reidentifying-text and deidentifying-clinical-text."
+description: "Detect PHI/PII spans in clinical text with OpenMed's extract_pii without altering the text. Use when the user wants to find names, dates, MRNs, phone numbers, addresses, US SSNs, Australian identifiers (Medicare, TFN, IHI, ABN, ACN, AHPRA, DVA, Medicare provider numbers), or other identifiers and get their offsets and labels (not redact them), inspect what would be removed before de-identifying, route spans to a custom redactor, normalize labels to a canonical taxonomy, or filter by confidence, language and locale. Covers extract_pii, the returned entity fields, CANONICAL_LABELS / normalize_label (SSN, MEDICARE_NUMBER, TFN, IHI, ABN, ACN, AHPRA_NUMBER, DVA_NUMBER, MEDICARE_PROVIDER_NUMBER, ID_NUM), and how it differs from deidentify. Pairs before reidentifying-text and deidentifying-clinical-text."
 license: Apache-2.0
 metadata:
   project: OpenMed
   category: openmed-core
   pairs: adjacent
-  version: "1.1-mt.1"
+  version: "1.1-mt.2"
 ---
 
 # Extracting PII Entities
@@ -24,7 +24,8 @@ on-device.
   Presidio, or `deidentify`).
 - You want to **normalize** model labels to a stable canonical taxonomy.
 - You need **country-specific identifiers** such as a US `SSN` or the Australian
-  Medicare, TFN, IHI, ABN and ACN numbers.
+  Medicare, TFN, IHI, ABN and ACN numbers, or the AHPRA registration, DVA file
+  and Medicare provider numbers.
 
 If you instead want redacted/masked output directly, use
 `deidentifying-clinical-text` (`openmed.deidentify`). If you need reversible
@@ -129,6 +130,9 @@ Identifier labels:
 | `IHI` | Australian Individual Healthcare Identifier | `AU_IHI` | `DIRECT_IDENTIFIER` |
 | `ABN` | Australian Business Number | `AU_ABN` | `DIRECT_IDENTIFIER` |
 | `ACN` | Australian Company Number | `AU_ACN` | `DIRECT_IDENTIFIER` |
+| `AHPRA_NUMBER` | Australian AHPRA practitioner registration number | `AHPRA` | `DIRECT_IDENTIFIER` |
+| `DVA_NUMBER` | Australian Department of Veterans' Affairs file number | `AU_DVA` | `DIRECT_IDENTIFIER` |
+| `MEDICARE_PROVIDER_NUMBER` | Australian Medicare provider / prescriber number | `AU_PROVIDER` | `DIRECT_IDENTIFIER` |
 | `ID_NUM` | Other identifiers (MRNs, national IDs, passports, NPI, ...) | — | `DIRECT_IDENTIFIER` |
 
 The AU labels sit next to `SSN`, which stays the US label. Aliases are
@@ -136,7 +140,10 @@ case- and separator-insensitive: `normalize_label("medicare_no")`,
 `"Medicare Number"` and `"MEDICARE_NUMBER"` all give `MEDICARE_NUMBER`;
 `"tax_file_number"` gives `TFN`; `"individual_healthcare_identifier"` gives
 `IHI`; `"australian_business_number"` / `"australian_company_number"` give
-`ABN` / `ACN`. Read the policy class with
+`ABN` / `ACN`; `"ahpra_registration_number"` gives `AHPRA_NUMBER`;
+`"dva_file_number"` gives `DVA_NUMBER`; and `"provider_number"` /
+`"prescriber_number"` give `MEDICARE_PROVIDER_NUMBER` (a Medicare *card* number
+stays `MEDICARE_NUMBER`). Read the policy class with
 `openmed.core.labels.policy_label_for(label)`.
 
 ## Australian identifiers (`locale="en_AU"`)
@@ -177,7 +184,29 @@ ACN              AU_ACN       [89:100]
   nine-digit value valid as both ACN and TFN is `TFN` unless ACN context is
   nearby.
 - Every shipped policy profile treats the AU labels exactly like `SSN`; the
-  `ccia_l1` / `ccia_l2` / `ccia_l3` profiles map all five to `mask`.
+  `ccia_l1` / `ccia_l2` / `ccia_l3` profiles map all eight to `mask`.
+
+### Clinician and veteran identifiers
+
+Three more AU labels cover identifiers that appear in referrals, scripts and
+report headers. Each is tagged only with a context word nearby (`AHPRA`,
+`DVA`, `Provider No`, `Prescriber No`, ...): AHPRA and DVA numbers have no
+check digit, and a Medicare provider number must also pass its mod-11 check
+character.
+Synthetic examples:
+
+| Label | Subtype | Example value | Format |
+| --- | --- | --- | --- |
+| `AHPRA_NUMBER` | `AHPRA` | `MED0001234567` | three-letter profession prefix + 10 digits |
+| `DVA_NUMBER` | `AU_DVA` | `QAB12345` | METeOR file number: state letter, war code, digits, optional dependant letter |
+| `MEDICARE_PROVIDER_NUMBER` | `AU_PROVIDER` | `123456AF` | six-digit stem, practice location character, mod-11 check letter |
+
+```text
+Referred by Dr A Example, AHPRA MED0001234567, Provider No 123456AF.
+Veteran, DVA file number QAB12345.
+```
+
+Under `ccia_l1`–`ccia_l3` all three are `mask`, like the other AU identifiers.
 
 ## Feed spans to a downstream redactor
 

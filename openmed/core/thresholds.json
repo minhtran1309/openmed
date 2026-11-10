@@ -111,6 +111,42 @@
             "action": "mask"
           }
         },
+        "AHPRA_NUMBER": {
+          "*": {
+            "keep_floor": 0.55,
+            "escalate_below": 0.55,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.6,
+            "escalate_below": 0.58,
+            "action": "mask"
+          }
+        },
+        "DVA_NUMBER": {
+          "*": {
+            "keep_floor": 0.55,
+            "escalate_below": 0.55,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.6,
+            "escalate_below": 0.58,
+            "action": "mask"
+          }
+        },
+        "MEDICARE_PROVIDER_NUMBER": {
+          "*": {
+            "keep_floor": 0.55,
+            "escalate_below": 0.55,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.6,
+            "escalate_below": 0.58,
+            "action": "mask"
+          }
+        },
         "PERSON": {
           "*": {
             "keep_floor": 0.5,
@@ -218,6 +254,42 @@
           }
         },
         "ACN": {
+          "*": {
+            "keep_floor": 0.05,
+            "escalate_below": 0.99,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.04,
+            "escalate_below": 0.99,
+            "action": "mask"
+          }
+        },
+        "AHPRA_NUMBER": {
+          "*": {
+            "keep_floor": 0.05,
+            "escalate_below": 0.99,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.04,
+            "escalate_below": 0.99,
+            "action": "mask"
+          }
+        },
+        "DVA_NUMBER": {
+          "*": {
+            "keep_floor": 0.05,
+            "escalate_below": 0.99,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.04,
+            "escalate_below": 0.99,
+            "action": "mask"
+          }
+        },
+        "MEDICARE_PROVIDER_NUMBER": {
           "*": {
             "keep_floor": 0.05,
             "escalate_below": 0.99,

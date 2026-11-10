@@ -10,6 +10,7 @@ from openmed.core.labels import (
     ADL_ACTIVITY,
     ADMINISTRATION_ROUTE,
     AGE,
+    AHPRA_NUMBER,
     AIRWAY_MANAGEMENT,
     ALLERGEN,
     ALLERGY_CRITICALITY,
@@ -57,6 +58,7 @@ from openmed.core.labels import (
     DRESSING_TYPE,
     DRUG,
     DURATION,
+    DVA_NUMBER,
     DYSPNEA_GRADE,
     EMAIL,
     ENDOSCOPIC_FINDING,
@@ -121,6 +123,7 @@ from openmed.core.labels import (
     MASKED_NUMBER,
     MEASUREMENT,
     MEDICARE_NUMBER,
+    MEDICARE_PROVIDER_NUMBER,
     MEDICATION,
     MICROORGANISM,
     MIDDLE_NAME,
@@ -1068,6 +1071,10 @@ class TestClinicalLabelsAreAdditive:
             IHI,
             ABN,
             ACN,
+            # AU clinician and veteran identifiers (ticket 05).
+            AHPRA_NUMBER,
+            DVA_NUMBER,
+            MEDICARE_PROVIDER_NUMBER,
         }
     )
 

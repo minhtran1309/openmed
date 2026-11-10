@@ -159,6 +159,9 @@ _G1A_LABELS = frozenset(
         "IHI",
         "ABN",
         "ACN",
+        "AHPRA_NUMBER",
+        "DVA_NUMBER",
+        "MEDICARE_PROVIDER_NUMBER",
     }
 )
 _G1B_LABELS = frozenset({"API_KEY", "ACCOUNT_NUMBER", "CREDIT_CARD", "IBAN"})
@@ -184,6 +187,9 @@ _CRITICAL_LABELS = frozenset(
         "IHI",
         "ABN",
         "ACN",
+        "AHPRA_NUMBER",
+        "DVA_NUMBER",
+        "MEDICARE_PROVIDER_NUMBER",
         "ID_NUM",
         "API_KEY",
         "ACCOUNT_NUMBER",

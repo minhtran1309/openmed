@@ -6,7 +6,7 @@ metadata:
   project: OpenMed
   category: de-identification
   pairs: after
-  version: "1.1-mt.1"
+  version: "1.1-mt.2"
 ---
 
 # Auditing against the HIPAA Safe Harbor checklist

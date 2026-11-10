@@ -66,6 +66,12 @@ IHI: Final = "IHI"
 ABN: Final = "ABN"
 #: Australian Company Number (``AU_ACN`` subtype).
 ACN: Final = "ACN"
+#: Australian AHPRA practitioner registration number (``AHPRA`` subtype).
+AHPRA_NUMBER: Final = "AHPRA_NUMBER"
+#: Australian Department of Veterans' Affairs file number (``AU_DVA`` subtype).
+DVA_NUMBER: Final = "DVA_NUMBER"
+#: Australian Medicare provider / prescriber number (``AU_PROVIDER`` subtype).
+MEDICARE_PROVIDER_NUMBER: Final = "MEDICARE_PROVIDER_NUMBER"
 ACCOUNT_NUMBER: Final = "ACCOUNT_NUMBER"
 PASSWORD: Final = "PASSWORD"
 PIN: Final = "PIN"
@@ -433,6 +439,9 @@ CANONICAL_LABELS: Final[FrozenSet[str]] = frozenset(
         IHI,
         ABN,
         ACN,
+        AHPRA_NUMBER,
+        DVA_NUMBER,
+        MEDICARE_PROVIDER_NUMBER,
         ACCOUNT_NUMBER,
         PASSWORD,
         PIN,
@@ -958,6 +967,9 @@ LABEL_METADATA: Final[Mapping[str, Mapping[str, object]]] = {
     IHI: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     ABN: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     ACN: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
+    AHPRA_NUMBER: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
+    DVA_NUMBER: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
+    MEDICARE_PROVIDER_NUMBER: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     ACCOUNT_NUMBER: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     PASSWORD: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     PIN: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
@@ -1259,6 +1271,9 @@ LABEL_TO_HIPAA: Final[Mapping[str, str]] = {
     IHI: HIPAA_UNIQUE_IDENTIFIER,
     ABN: HIPAA_UNIQUE_IDENTIFIER,
     ACN: HIPAA_UNIQUE_IDENTIFIER,
+    AHPRA_NUMBER: HIPAA_UNIQUE_IDENTIFIER,
+    DVA_NUMBER: HIPAA_UNIQUE_IDENTIFIER,
+    MEDICARE_PROVIDER_NUMBER: HIPAA_UNIQUE_IDENTIFIER,
     ACCOUNT_NUMBER: HIPAA_ACCOUNT_NUMBER,
     PASSWORD: HIPAA_UNIQUE_IDENTIFIER,
     PIN: HIPAA_UNIQUE_IDENTIFIER,
@@ -1447,6 +1462,9 @@ LABEL_TO_POPIA: Final[Mapping[str, str]] = {
     IHI: POPIA_IDENTIFYING_NUMBER,
     ABN: POPIA_IDENTIFYING_NUMBER,
     ACN: POPIA_IDENTIFYING_NUMBER,
+    AHPRA_NUMBER: POPIA_IDENTIFYING_NUMBER,
+    DVA_NUMBER: POPIA_IDENTIFYING_NUMBER,
+    MEDICARE_PROVIDER_NUMBER: POPIA_IDENTIFYING_NUMBER,
     ACCOUNT_NUMBER: POPIA_IDENTIFYING_NUMBER,
     PASSWORD: POPIA_ONLINE_IDENTIFIER,
     PIN: POPIA_IDENTIFYING_NUMBER,
@@ -1821,6 +1839,16 @@ _ALIAS_MAP: Final[Mapping[str, str]] = {
     "australianbusinessnumber": ABN,
     "acn": ACN,
     "australiancompanynumber": ACN,
+    # Australian clinician and veteran identifiers (ticket 05).
+    "ahpra": AHPRA_NUMBER,
+    "ahpranumber": AHPRA_NUMBER,
+    "ahpraregistrationnumber": AHPRA_NUMBER,
+    "dva": DVA_NUMBER,
+    "dvanumber": DVA_NUMBER,
+    "dvafilenumber": DVA_NUMBER,
+    "medicareprovidernumber": MEDICARE_PROVIDER_NUMBER,
+    "providernumber": MEDICARE_PROVIDER_NUMBER,
+    "prescribernumber": MEDICARE_PROVIDER_NUMBER,
     "accountnumber": ACCOUNT_NUMBER,
     "accountname": ACCOUNT_NUMBER,
     "bankaccount": ACCOUNT_NUMBER,
@@ -2651,6 +2679,9 @@ __all__ = [
     "IHI",
     "ABN",
     "ACN",
+    "AHPRA_NUMBER",
+    "DVA_NUMBER",
+    "MEDICARE_PROVIDER_NUMBER",
     "ACCOUNT_NUMBER",
     "PASSWORD",
     "PIN",
