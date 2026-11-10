@@ -204,13 +204,13 @@ def test_extract_pii_en_au_locale_yields_medicare_and_tfn_spans(monkeypatch):
 
     assert (
         medicare_value,
-        "national_id",
+        "medicare_number",
         medicare_start,
         medicare_start + len(medicare_value),
     ) in spans
     assert (
         tfn_value,
-        "national_id",
+        "tfn",
         tfn_start,
         tfn_start + len(tfn_value),
     ) in spans

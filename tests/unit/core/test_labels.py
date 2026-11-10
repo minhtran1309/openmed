@@ -3,8 +3,10 @@
 import pytest
 
 from openmed.core.labels import (
+    ABN,
     ABNORMAL_FLAG,
     ACCOUNT_NUMBER,
+    ACN,
     ADL_ACTIVITY,
     ADMINISTRATION_ROUTE,
     AGE,
@@ -93,6 +95,7 @@ from openmed.core.labels import (
     ID_SUBTYPE_NPI,
     ID_SUBTYPES,
     IHC_STAIN,
+    IHI,
     IMAGING_MODALITY,
     IMEI,
     IMMUNIZATION,
@@ -117,6 +120,7 @@ from openmed.core.labels import (
     MARGIN_STATUS,
     MASKED_NUMBER,
     MEASUREMENT,
+    MEDICARE_NUMBER,
     MEDICATION,
     MICROORGANISM,
     MIDDLE_NAME,
@@ -165,6 +169,7 @@ from openmed.core.labels import (
     STRENGTH,
     SUBSTANCE,
     SUSCEPTIBILITY,
+    TFN,
     THYROID_MEASURE,
     TIME,
     TISSUE,
@@ -1057,6 +1062,12 @@ class TestClinicalLabelsAreAdditive:
             IMMUNIZATION,
             PSYCH_SYMPTOM,
             TOOTH,
+            # AU identifiers with their own canonical labels next to SSN.
+            MEDICARE_NUMBER,
+            TFN,
+            IHI,
+            ABN,
+            ACN,
         }
     )
 

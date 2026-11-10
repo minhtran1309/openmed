@@ -9,7 +9,9 @@
     },
     "canonical_label": {
       "enum": [
+        "ABN",
         "ACCOUNT_NUMBER",
+        "ACN",
         "AGE",
         "AMOUNT",
         "API_KEY",
@@ -31,6 +33,7 @@
         "HEIGHT",
         "IBAN",
         "ID_NUM",
+        "IHI",
         "IMEI",
         "IP_ADDRESS",
         "JOB_DEPARTMENT",
@@ -40,6 +43,7 @@
         "LOCATION",
         "MAC_ADDRESS",
         "MASKED_NUMBER",
+        "MEDICARE_NUMBER",
         "MIDDLE_NAME",
         "OCCUPATION",
         "ORDINAL_DIRECTION",
@@ -52,6 +56,7 @@
         "PREFIX",
         "SSN",
         "STREET_ADDRESS",
+        "TFN",
         "TIME",
         "URL",
         "USER_AGENT",

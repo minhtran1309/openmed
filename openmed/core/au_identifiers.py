@@ -19,9 +19,12 @@ Design rules shared by every pattern:
   redacted rather than silently leaked.
 * A match never starts or ends inside a longer separated digit run, so an
   identifier cannot be carved out of a larger number.
-* Validated matches carry a value-free ``subtype`` (``AU_ABN`` ...) in
-  ``metadata["subtype"]``; the raw label stays ``national_id`` (canonical
-  ``ID_NUM``).
+* Each pattern emits its own AU canonical label, next to ``SSN``: raw
+  labels ``ihi`` / ``abn`` / ``acn`` (and ``medicare_number`` / ``tfn`` in
+  ``pii_i18n``) normalize to ``IHI`` / ``ABN`` / ``ACN`` /
+  ``MEDICARE_NUMBER`` / ``TFN``, all ``DIRECT_IDENTIFIER``. Validated matches
+  also carry a value-free ``subtype`` (``AU_ABN`` ...) in
+  ``metadata["subtype"]``.
 
 Known false-positive property: a checksum is weak evidence for short numbers.
 About 1 in 10 random nine-digit numbers pass the ACN check digit and about
@@ -157,7 +160,7 @@ AU_IDENTIFIER_PII_PATTERNS: List[PIIPattern] = [
     # pattern (priority 8, base score 0.4).
     PIIPattern(
         rf"{_RUN_START}\b8[ -]?0[ -]?0[ -]?3[ -]?6[ -]?0(?:[ -]?\d){{10}}\b{_RUN_END}",
-        "national_id",
+        "ihi",
         priority=14,
         base_score=0.85,
         context_boost=0.1,
@@ -170,7 +173,7 @@ AU_IDENTIFIER_PII_PATTERNS: List[PIIPattern] = [
     # unspaced Medicare-plus-IRN shape, which is also eleven digits.
     PIIPattern(
         rf"{_RUN_START}\b[1-9]\d ?\d{{3}} ?\d{{3}} ?\d{{3}}\b{_RUN_END}",
-        "national_id",
+        "abn",
         priority=13,
         base_score=0.45,
         context_boost=0.5,
@@ -183,7 +186,7 @@ AU_IDENTIFIER_PII_PATTERNS: List[PIIPattern] = [
     # TFN, so an ACN named by nearby context outranks the TFN pattern ...
     PIIPattern(
         _ACN_PATTERN,
-        "national_id",
+        "acn",
         priority=12,
         base_score=0.45,
         context_boost=0.5,
@@ -197,7 +200,7 @@ AU_IDENTIFIER_PII_PATTERNS: List[PIIPattern] = [
     # the more sensitive personal TFN (TFN priority 11 and equal base score).
     PIIPattern(
         _ACN_PATTERN,
-        "national_id",
+        "acn",
         priority=10,
         base_score=0.45,
         context_boost=0.5,

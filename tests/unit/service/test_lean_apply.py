@@ -106,6 +106,36 @@ def test_apply_renders_mark_and_shift(client) -> None:
     }
 
 
+@pytest.mark.parametrize("policy", ["ccia_l1", "ccia_l2", "ccia_l3"])
+def test_apply_marks_au_canonical_labels_and_keeps_id_num_and_ssn(
+    client, policy
+) -> None:
+    # Synthetic checksum-valid AU values (see test_au_identifiers.py) plus a
+    # synthetic SSN-shaped value; apply never detects, so labels are given.
+    text = (
+        "Medicare 2123 45670 1, TFN 123 456 782, IHI 8003601234567894, "
+        "ABN 51 824 753 556, ACN 123 456 780, ID 445566, SSN 078-05-1120."
+    )
+    spans = [
+        _span("m", text, "2123 45670 1", "MEDICARE_NUMBER", subtype="AU_MEDICARE"),
+        _span("t", text, "123 456 782", "TFN", subtype="AU_TFN"),
+        _span("i", text, "8003601234567894", "IHI", subtype="AU_IHI"),
+        _span("a", text, "51 824 753 556", "ABN", subtype="AU_ABN"),
+        _span("c", text, "123 456 780", "ACN", subtype="AU_ACN"),
+        _span("g", text, "445566", "ID_NUM"),
+        _span("s", text, "078-05-1120", "SSN"),
+    ]
+    response = _apply(client, [_seg("s1", text, spans)], policy=policy)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["segments"][0]["text"] == (
+        "Medicare [MEDICARE_NUMBER_1], TFN [TFN_1], IHI [IHI_1], "
+        "ABN [ABN_1], ACN [ACN_1], ID [ID_NUM_1], SSN [SSN_1]."
+    )
+    assert {span["action"] for span in body["spans"]} == {"mark"}
+
+
 def test_apply_with_patient_key_and_secret(client) -> None:
     offset = stable_offset_for(SYNTHETIC_KEY, max_days=365, secret=SYNTHETIC_SECRET)
     keyed = _apply(client, _doc(), patient_key=SYNTHETIC_KEY, secret=SYNTHETIC_SECRET)

@@ -111,14 +111,20 @@ def test_reproducibility_hash_convention_is_pinned() -> None:
 def test_committed_synthetic_shield_evidence_is_reproducible(monkeypatch) -> None:
     committed = BenchmarkReport.read_json(SHIELD_REPORT)
     # Reproduce the historical report with its original catalog dimensions.
-    # New, unevaluated language routes add zero-support buckets to metrics;
-    # they must not invalidate immutable evidence or imply new coverage.
+    # New, unevaluated language routes and canonical labels add zero-support
+    # buckets to metrics; they must not invalidate immutable evidence or imply
+    # new coverage.
     import openmed.eval.metrics as metrics
 
     monkeypatch.setattr(
         metrics,
         "SUPPORTED_LANGUAGES",
         tuple(committed.metrics["leakage"]["total_chars_by_language"]),
+    )
+    monkeypatch.setattr(
+        metrics,
+        "CANONICAL_LABELS",
+        frozenset(committed.metrics["leakage"]["total_chars_by_label"]),
     )
     source_revision = str(committed.metadata["source_revision"])
     regenerated = generate_report(

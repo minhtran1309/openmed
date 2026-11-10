@@ -56,6 +56,16 @@ AGE: Final = "AGE"
 #: Identifiers
 ID_NUM: Final = "ID_NUM"
 SSN: Final = "SSN"
+#: Australian Medicare card number (checksum-validated, ``AU_MEDICARE`` subtype).
+MEDICARE_NUMBER: Final = "MEDICARE_NUMBER"
+#: Australian Tax File Number (``AU_TFN`` subtype).
+TFN: Final = "TFN"
+#: Australian Individual Healthcare Identifier (``AU_IHI`` subtype).
+IHI: Final = "IHI"
+#: Australian Business Number (``AU_ABN`` subtype).
+ABN: Final = "ABN"
+#: Australian Company Number (``AU_ACN`` subtype).
+ACN: Final = "ACN"
 ACCOUNT_NUMBER: Final = "ACCOUNT_NUMBER"
 PASSWORD: Final = "PASSWORD"
 PIN: Final = "PIN"
@@ -418,6 +428,11 @@ CANONICAL_LABELS: Final[FrozenSet[str]] = frozenset(
         AGE,
         ID_NUM,
         SSN,
+        MEDICARE_NUMBER,
+        TFN,
+        IHI,
+        ABN,
+        ACN,
         ACCOUNT_NUMBER,
         PASSWORD,
         PIN,
@@ -938,6 +953,11 @@ LABEL_METADATA: Final[Mapping[str, Mapping[str, object]]] = {
     # Identifiers
     ID_NUM: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     SSN: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
+    MEDICARE_NUMBER: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
+    TFN: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
+    IHI: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
+    ABN: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
+    ACN: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     ACCOUNT_NUMBER: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     PASSWORD: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
     PIN: _label_metadata(DIRECT_IDENTIFIER, RISK_HIGH),
@@ -1234,6 +1254,11 @@ LABEL_TO_HIPAA: Final[Mapping[str, str]] = {
     # Identifiers
     ID_NUM: HIPAA_UNIQUE_IDENTIFIER,
     SSN: HIPAA_SOCIAL_SECURITY_NUMBER,
+    MEDICARE_NUMBER: HIPAA_UNIQUE_IDENTIFIER,
+    TFN: HIPAA_UNIQUE_IDENTIFIER,
+    IHI: HIPAA_UNIQUE_IDENTIFIER,
+    ABN: HIPAA_UNIQUE_IDENTIFIER,
+    ACN: HIPAA_UNIQUE_IDENTIFIER,
     ACCOUNT_NUMBER: HIPAA_ACCOUNT_NUMBER,
     PASSWORD: HIPAA_UNIQUE_IDENTIFIER,
     PIN: HIPAA_UNIQUE_IDENTIFIER,
@@ -1417,6 +1442,11 @@ LABEL_TO_POPIA: Final[Mapping[str, str]] = {
     # Identifiers
     ID_NUM: POPIA_IDENTIFYING_NUMBER,
     SSN: POPIA_IDENTIFYING_NUMBER,
+    MEDICARE_NUMBER: POPIA_IDENTIFYING_NUMBER,
+    TFN: POPIA_IDENTIFYING_NUMBER,
+    IHI: POPIA_IDENTIFYING_NUMBER,
+    ABN: POPIA_IDENTIFYING_NUMBER,
+    ACN: POPIA_IDENTIFYING_NUMBER,
     ACCOUNT_NUMBER: POPIA_IDENTIFYING_NUMBER,
     PASSWORD: POPIA_ONLINE_IDENTIFIER,
     PIN: POPIA_IDENTIFYING_NUMBER,
@@ -1776,6 +1806,21 @@ _ALIAS_MAP: Final[Mapping[str, str]] = {
     "npi": ID_NUM,
     "ssn": SSN,
     "socialsecuritynumber": SSN,
+    # Australian identifiers (own canonical labels; ``AU_*`` subtypes).
+    "medicare": MEDICARE_NUMBER,
+    "medicarenumber": MEDICARE_NUMBER,
+    "medicareno": MEDICARE_NUMBER,
+    "medicarecard": MEDICARE_NUMBER,
+    "medicarecardnumber": MEDICARE_NUMBER,
+    "tfn": TFN,
+    "taxfilenumber": TFN,
+    "taxfileno": TFN,
+    "ihi": IHI,
+    "individualhealthcareidentifier": IHI,
+    "abn": ABN,
+    "australianbusinessnumber": ABN,
+    "acn": ACN,
+    "australiancompanynumber": ACN,
     "accountnumber": ACCOUNT_NUMBER,
     "accountname": ACCOUNT_NUMBER,
     "bankaccount": ACCOUNT_NUMBER,
@@ -2601,6 +2646,11 @@ __all__ = [
     "AGE",
     "ID_NUM",
     "SSN",
+    "MEDICARE_NUMBER",
+    "TFN",
+    "IHI",
+    "ABN",
+    "ACN",
     "ACCOUNT_NUMBER",
     "PASSWORD",
     "PIN",

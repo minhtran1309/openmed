@@ -1,12 +1,12 @@
 ---
 name: extracting-pii-entities
-description: "Detect PHI/PII spans in clinical text with OpenMed's extract_pii without altering the text. Use when the user wants to find names, dates, MRNs, phone numbers, addresses, SSNs, or other identifiers and get their offsets and labels (not redact them), inspect what would be removed before de-identifying, route spans to a custom redactor, normalize labels to a canonical taxonomy, or filter by confidence and language. Covers extract_pii, the PIIEntity fields, CANONICAL_LABELS / normalize_label, and how it differs from deidentify. Pairs before reidentifying-text and deidentifying-clinical-text."
+description: "Detect PHI/PII spans in clinical text with OpenMed's extract_pii without altering the text. Use when the user wants to find names, dates, MRNs, phone numbers, addresses, US SSNs, Australian identifiers (Medicare, TFN, IHI, ABN, ACN), or other identifiers and get their offsets and labels (not redact them), inspect what would be removed before de-identifying, route spans to a custom redactor, normalize labels to a canonical taxonomy, or filter by confidence, language and locale. Covers extract_pii, the returned entity fields, CANONICAL_LABELS / normalize_label (SSN, MEDICARE_NUMBER, TFN, IHI, ABN, ACN, ID_NUM), and how it differs from deidentify. Pairs before reidentifying-text and deidentifying-clinical-text."
 license: Apache-2.0
 metadata:
   project: OpenMed
   category: openmed-core
   pairs: adjacent
-  version: "1.0"
+  version: "1.1-mt.1"
 ---
 
 # Extracting PII Entities
@@ -23,6 +23,8 @@ on-device.
 - You are feeding detected spans into a **downstream redactor** (your own,
   Presidio, or `deidentify`).
 - You want to **normalize** model labels to a stable canonical taxonomy.
+- You need **country-specific identifiers** such as a US `SSN` or the Australian
+  Medicare, TFN, IHI, ABN and ACN numbers.
 
 If you instead want redacted/masked output directly, use
 `deidentifying-clinical-text` (`openmed.deidentify`). If you need reversible
@@ -56,19 +58,20 @@ for ent in result.entities:
     print(f"{ent.label:10} {ent.text!r:18} {ent.confidence:.2f} [{ent.start}:{ent.end}]")
 ```
 
-`extract_pii(...)` returns a `PredictionResult`. Its `.entities` are `PIIEntity`
-objects (synthetic example fields shown):
+`extract_pii(...)` returns a `PredictionResult`. Its `.entities` are
+`EntityPrediction` objects (synthetic example fields shown):
 
 ```text
 ent.text            # the identifier surface string, e.g. "617-555-0142"
-ent.label           # detected label, e.g. "PHONE"
-ent.confidence      # model score in [0, 1]   (NOTE: .confidence, not .score)
+ent.label           # detected (source) label, e.g. "phone" or "medicare_number"
+ent.confidence      # score in [0, 1]   (NOTE: .confidence, not .score)
 ent.start / ent.end # character offsets into the original note
-ent.canonical_label # label mapped to OpenMed's canonical taxonomy (if set)
-ent.entity_type     # same as label
+ent.metadata        # dict or None; pattern hits may carry metadata["subtype"]
 ```
 
-The text is unchanged — `result.text` is your original input.
+`ent.label` is the detector's own spelling. Map it to the canonical taxonomy with
+`normalize_label(ent.label)` (next section). The text is unchanged —
+`result.text` is your original input.
 
 ## Signature & key parameters
 
@@ -79,6 +82,7 @@ openmed.extract_pii(
     confidence_threshold=0.5,     # raise for precision, lower for recall
     use_smart_merging=True,       # merge fragmented spans into whole units
     lang="en",                    # en es pt fr de it nl hi te ar tr ja
+    locale=None,                  # e.g. "en_AU" enables the Australian patterns
     loader=None,                  # reuse a ModelLoader across calls
 )
 ```
@@ -88,6 +92,9 @@ openmed.extract_pii(
 - **`lang`** selects the language-appropriate default model and regex patterns.
   Pass the right language; do not run the English model on non-English text. Use
   `openmed.get_default_pii_model(lang)` to confirm coverage.
+- **`locale`** adds country-specific patterns on top of the language. The
+  Australian identifier patterns run only with `locale="en_AU"`; other locales
+  never emit the AU labels below.
 
 ## Normalize labels to the canonical taxonomy
 
@@ -101,15 +108,76 @@ from openmed import CANONICAL_LABELS, normalize_label
 result = openmed.extract_pii("Email jane.roe@example.org; SSN 123-45-6789.")
 
 for ent in result.entities:
-    canon = ent.canonical_label or normalize_label(ent.label)
-    assert canon in CANONICAL_LABELS or canon == "OTHER"
-    print(ent.text, "->", canon)
+    canon = normalize_label(ent.label)
+    assert canon in CANONICAL_LABELS
+    print(ent.text, "->", canon)      # jane.roe@example.org -> EMAIL
+                                      # 123-45-6789 -> SSN
 ```
 
 `CANONICAL_LABELS` is a frozenset of UPPER_SNAKE_CASE labels (e.g. `PERSON`,
-`DATE`, `PHONE`, `EMAIL`, `SSN`, `ID_NUM`, `LOCATION`). `normalize_label(label)`
+`DATE`, `PHONE`, `EMAIL`, `ID_NUM`, `LOCATION`). `normalize_label(label)`
 accepts messy inputs (`"FIRSTNAME"`, `"first_name"`, `"B-EMAIL"`) and maps unknown
 labels to `OTHER` rather than raising.
+
+Identifier labels:
+
+| Canonical label | Identifier | Subtype (`metadata["subtype"]`) | Policy class |
+| --- | --- | --- | --- |
+| `SSN` | US Social Security number | — | `DIRECT_IDENTIFIER` |
+| `MEDICARE_NUMBER` | Australian Medicare card number | `AU_MEDICARE` | `DIRECT_IDENTIFIER` |
+| `TFN` | Australian Tax File Number | `AU_TFN` | `DIRECT_IDENTIFIER` |
+| `IHI` | Australian Individual Healthcare Identifier | `AU_IHI` | `DIRECT_IDENTIFIER` |
+| `ABN` | Australian Business Number | `AU_ABN` | `DIRECT_IDENTIFIER` |
+| `ACN` | Australian Company Number | `AU_ACN` | `DIRECT_IDENTIFIER` |
+| `ID_NUM` | Other identifiers (MRNs, national IDs, passports, NPI, ...) | — | `DIRECT_IDENTIFIER` |
+
+The AU labels sit next to `SSN`, which stays the US label. Aliases are
+case- and separator-insensitive: `normalize_label("medicare_no")`,
+`"Medicare Number"` and `"MEDICARE_NUMBER"` all give `MEDICARE_NUMBER`;
+`"tax_file_number"` gives `TFN`; `"individual_healthcare_identifier"` gives
+`IHI`; `"australian_business_number"` / `"australian_company_number"` give
+`ABN` / `ACN`. Read the policy class with
+`openmed.core.labels.policy_label_for(label)`.
+
+## Australian identifiers (`locale="en_AU"`)
+
+The AU patterns validate each number's checksum and match the value only, never
+its field label. All values below are synthetic and checksum-valid:
+
+```python
+import openmed
+from openmed import normalize_label
+
+note = (
+    "Medicare 2123 45670 1, TFN 123 456 782, IHI 8003 6012 3456 7894, "
+    "ABN 51 824 753 556, ACN 123 456 780."
+)
+
+result = openmed.extract_pii(note, lang="en", locale="en_AU")
+
+for ent in result.entities:
+    subtype = (ent.metadata or {}).get("subtype")
+    print(f"{normalize_label(ent.label):16} {subtype!s:12} [{ent.start}:{ent.end}]")
+```
+
+```text
+MEDICARE_NUMBER  AU_MEDICARE  [9:21]
+TFN              AU_TFN       [27:38]
+IHI              AU_IHI       [44:63]
+ABN              AU_ABN       [69:83]
+ACN              AU_ACN       [89:100]
+```
+
+- `metadata["subtype"]` is set only when the checksum passes. A value that fails
+  its checksum but is labelled by nearby context (`"Medicare number ..."`) is
+  still returned with its AU label at a reduced score and **no** subtype, so a
+  typo or OCR error is still redacted. Unlabelled checksum failures are dropped.
+- Checksums are weak evidence for short numbers: a bare nine- or ten-digit
+  number that happens to pass a check is tagged even without context. A
+  nine-digit value valid as both ACN and TFN is `TFN` unless ACN context is
+  nearby.
+- Every shipped policy profile treats the AU labels exactly like `SSN`; the
+  `ccia_l1` / `ccia_l2` / `ccia_l3` profiles map all five to `mask`.
 
 ## Feed spans to a downstream redactor
 
@@ -118,16 +186,21 @@ redactor (replace highest-offset first so positions stay valid):
 
 ```python
 import openmed
+from openmed import normalize_label
 
 note = "Patient John Doe, MRN 00481726, seen 2024-03-02."
 result = openmed.extract_pii(note, confidence_threshold=0.6)
 
 redacted = note
 for ent in sorted(result.entities, key=lambda e: e.start, reverse=True):
-    redacted = redacted[:ent.start] + f"[{ent.label}]" + redacted[ent.end:]
+    tag = normalize_label(ent.label)
+    redacted = redacted[:ent.start] + f"[{tag}]" + redacted[ent.end:]
 
 print(redacted)   # Patient [PERSON], MRN [ID_NUM], seen [DATE].
 ```
+
+With `locale="en_AU"`, the same loop tags `Medicare 2123 45670 1` as
+`Medicare [MEDICARE_NUMBER]`.
 
 For production redaction, masking strategies, and policy profiles, hand the work
 to `openmed.deidentify` instead of hand-rolling — it adds a safety sweep and
@@ -143,19 +216,24 @@ date-shifting (see `deidentifying-clinical-text`).
 - **To Presidio / custom anonymizers:** `extract_pii` spans (`label`, `start`,
   `end`) translate cleanly into other recognizers' result formats; OpenMed also
   ships an `Anonymizer` (`openmed.Anonymizer`) for richer surrogate generation.
+  The Presidio adapter maps `US_SSN` ↔ `SSN` and `AU_MEDICARE` / `AU_TFN` /
+  `AU_ABN` / `AU_ACN` ↔ `MEDICARE_NUMBER` / `TFN` / `ABN` / `ACN`.
 
 ## Edge cases & gotchas
 
-- **Attribute is `.confidence`, not `.score`.** `PIIEntity` extends
-  `EntityPrediction`.
+- **Attribute is `.confidence`, not `.score`.**
+- **`ent.label` is not canonical.** Pattern and model labels keep their source
+  spelling (`"ssn"`, `"medicare_number"`); call `normalize_label` before
+  comparing against `CANONICAL_LABELS`.
 - **Detection is not redaction.** `extract_pii` never changes text — if a caller
   expected redacted output, they want `deidentify`.
 - **Threshold trade-off:** `0.5` favors recall (good for *finding* PHI to review).
   For *removing* PHI, prefer `deidentify`'s safety-biased `0.7` default.
-- **Language matters:** wrong `lang` silently lowers recall. Verify with
+- **Language and locale matter:** wrong `lang` silently lowers recall, and the AU
+  identifier patterns need `locale="en_AU"`. Verify with
   `get_default_pii_model(lang)`.
-- **No raw PHI in logs/audit.** Record offsets, labels, and hashes — never the
-  identifier text. Use synthetic data in examples and tests.
+- **No raw PHI in logs/audit.** Record offsets, labels, subtypes, and hashes —
+  never the identifier text. Use synthetic data in examples and tests.
 - **Local-first.** No cloud calls in PHI workflows; models run on-device after a
   one-time download.
 

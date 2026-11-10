@@ -1463,6 +1463,12 @@ LABEL_GENERATORS: Dict[str, Generator] = {
     L.AGE: _gen_age,
     L.ID_NUM: _gen_id_num,
     L.SSN: _gen_ssn,
+    # AU identifiers keep the generic ID surrogate they had as ``ID_NUM``.
+    L.MEDICARE_NUMBER: _gen_id_num,
+    L.TFN: _gen_id_num,
+    L.IHI: _gen_id_num,
+    L.ABN: _gen_id_num,
+    L.ACN: _gen_id_num,
     L.ACCOUNT_NUMBER: _gen_account_number,
     L.PASSWORD: _gen_password,
     L.PIN: _gen_pin,

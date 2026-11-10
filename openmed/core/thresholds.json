@@ -51,6 +51,66 @@
             "action": "mask"
           }
         },
+        "MEDICARE_NUMBER": {
+          "*": {
+            "keep_floor": 0.55,
+            "escalate_below": 0.55,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.6,
+            "escalate_below": 0.58,
+            "action": "mask"
+          }
+        },
+        "TFN": {
+          "*": {
+            "keep_floor": 0.55,
+            "escalate_below": 0.55,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.6,
+            "escalate_below": 0.58,
+            "action": "mask"
+          }
+        },
+        "IHI": {
+          "*": {
+            "keep_floor": 0.55,
+            "escalate_below": 0.55,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.6,
+            "escalate_below": 0.58,
+            "action": "mask"
+          }
+        },
+        "ABN": {
+          "*": {
+            "keep_floor": 0.55,
+            "escalate_below": 0.55,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.6,
+            "escalate_below": 0.58,
+            "action": "mask"
+          }
+        },
+        "ACN": {
+          "*": {
+            "keep_floor": 0.55,
+            "escalate_below": 0.55,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.6,
+            "escalate_below": 0.58,
+            "action": "mask"
+          }
+        },
         "PERSON": {
           "*": {
             "keep_floor": 0.5,
@@ -98,6 +158,66 @@
           }
         },
         "ID_NUM": {
+          "*": {
+            "keep_floor": 0.05,
+            "escalate_below": 0.99,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.04,
+            "escalate_below": 0.99,
+            "action": "mask"
+          }
+        },
+        "MEDICARE_NUMBER": {
+          "*": {
+            "keep_floor": 0.05,
+            "escalate_below": 0.99,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.04,
+            "escalate_below": 0.99,
+            "action": "mask"
+          }
+        },
+        "TFN": {
+          "*": {
+            "keep_floor": 0.05,
+            "escalate_below": 0.99,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.04,
+            "escalate_below": 0.99,
+            "action": "mask"
+          }
+        },
+        "IHI": {
+          "*": {
+            "keep_floor": 0.05,
+            "escalate_below": 0.99,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.04,
+            "escalate_below": 0.99,
+            "action": "mask"
+          }
+        },
+        "ABN": {
+          "*": {
+            "keep_floor": 0.05,
+            "escalate_below": 0.99,
+            "action": "mask"
+          },
+          "en": {
+            "keep_floor": 0.04,
+            "escalate_below": 0.99,
+            "action": "mask"
+          }
+        },
+        "ACN": {
           "*": {
             "keep_floor": 0.05,
             "escalate_below": 0.99,

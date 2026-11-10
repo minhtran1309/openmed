@@ -30,7 +30,7 @@ Each row maps the Safe Harbor category to the OpenMed HIPAA class
 | O | IP addresses | `IP_ADDRESS` | `IP_ADDRESS` | — |
 | P | Biometric identifiers (finger/voice prints) | `BIOMETRIC_IDENTIFIER` | — (no dedicated text label) | **Gap:** biometrics are rarely present as text; handle out-of-band. |
 | Q | Full-face photographs and comparable images | `FULL_FACE_PHOTO` | — (out of scope for text) | **Gap:** image content is not text PII; strip in the imaging pipeline. |
-| R | Any other unique identifying number, characteristic, or code | `UNIQUE_IDENTIFIER` | `USERNAME`, `PASSWORD`, `PIN`, `API_KEY`, `ORGANIZATION`, `JOB_TITLE`, `OCCUPATION`, `GENDER`, `USER_AGENT`, `OTHER`, etc. | Catch-all; rare characteristics (e.g. an unusual occupation + small town) can re-identify even when each field alone is fine. |
+| R | Any other unique identifying number, characteristic, or code | `UNIQUE_IDENTIFIER` | `USERNAME`, `PASSWORD`, `PIN`, `API_KEY`, Australian `MEDICARE_NUMBER` / `TFN` / `IHI` / `ABN` / `ACN`, `ORGANIZATION`, `JOB_TITLE`, `OCCUPATION`, `GENDER`, `USER_AGENT`, `OTHER`, etc. | Catch-all; rare characteristics (e.g. an unusual occupation + small town) can re-identify even when each field alone is fine. |
 
 ## The "actual knowledge" requirement
 

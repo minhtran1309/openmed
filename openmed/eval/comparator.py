@@ -50,6 +50,11 @@ _OFFLINE_UNAVAILABLE_REASON = "adapter is not available for this offline run"
 _DEFAULT_CRITICAL_LABELS = frozenset(
     {
         "SSN",
+        "MEDICARE_NUMBER",
+        "TFN",
+        "IHI",
+        "ABN",
+        "ACN",
         "ID_NUM",
         "API_KEY",
         "ACCOUNT_NUMBER",

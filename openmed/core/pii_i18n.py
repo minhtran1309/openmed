@@ -5839,7 +5839,7 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
     PIIPattern(
         r"(?<!\d)(?<!\d[ -])\b(?:[2-6]\d{9}|[2-6]\d{3} \d{5} \d)"
         r"(?:(?:[ ]*/[ ]*|[ -]?)[1-9])?\b(?![ -]?\d)",
-        "national_id",
+        "medicare_number",
         priority=12,
         base_score=0.45,
         context_words=[
@@ -5859,7 +5859,7 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
     # separated digit run such as a spaced ABN.
     PIIPattern(
         r"(?<!\d)(?<!\d[ -])\b(?:\d{9}|\d{3} \d{3} \d{3})\b(?![ -]?\d)",
-        "national_id",
+        "tfn",
         priority=11,
         base_score=0.45,
         context_words=[

@@ -35,6 +35,11 @@ DEFAULT_TEMPERATURE_BINS = 10
 DEFAULT_CRITICAL_LEAKAGE_LABELS = frozenset(
     {
         "SSN",
+        "MEDICARE_NUMBER",
+        "TFN",
+        "IHI",
+        "ABN",
+        "ACN",
         "ID_NUM",
         "API_KEY",
         "ACCOUNT_NUMBER",
@@ -1893,6 +1898,11 @@ def grounding_calibration_report(*args: Any, **kwargs: Any) -> dict[str, Any]:
 _DEFAULT_CRITICAL_LABELS = frozenset(
     {
         "SSN",
+        "MEDICARE_NUMBER",
+        "TFN",
+        "IHI",
+        "ABN",
+        "ACN",
         "ID_NUM",
         "API_KEY",
         "ACCOUNT_NUMBER",

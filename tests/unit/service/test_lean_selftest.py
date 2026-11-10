@@ -106,6 +106,18 @@ def test_all_six_checks_pass_with_stubbed_model() -> None:
     assert body["checks"] == {name: "pass" for name in CHECKS}
 
 
+def test_probe_tags_au_identifiers_with_their_canonical_labels() -> None:
+    findings = selftest_module._detect(_make_detector())
+    by_subtype = {f.get("subtype"): f["label"] for f in findings}
+    assert by_subtype["AU_MEDICARE"] == "MEDICARE_NUMBER"
+    assert by_subtype["AU_ABN"] == "ABN"
+
+    output = selftest_module._apply(findings)
+    assert "Medicare [MEDICARE_NUMBER_1]," in output
+    assert "ABN [ABN_1]," in output
+    assert "[ID_NUM_" not in output
+
+
 def test_accepts_empty_object_body_and_rejects_extra_fields() -> None:
     client = _client()
 
@@ -236,8 +248,8 @@ def _good_findings():
 
     return [
         f("PERSON"),
-        f("ID_NUM", "AU_MEDICARE"),
-        f("ID_NUM", "AU_ABN"),
+        f("MEDICARE_NUMBER", "AU_MEDICARE"),
+        f("ABN", "AU_ABN"),
         f("PHONE", "AU_PHONE"),
         f("DATE"),
         f("DATE"),

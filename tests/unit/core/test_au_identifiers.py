@@ -109,6 +109,23 @@ def _extract(text: str, *, locale: str | None = "en_AU"):
     ).entities
 
 
+# Raw pattern label and canonical label per AU subtype.
+_RAW_LABELS = {
+    "AU_ABN": "abn",
+    "AU_ACN": "acn",
+    "AU_IHI": "ihi",
+    "AU_MEDICARE": "medicare_number",
+    "AU_TFN": "tfn",
+}
+_CANONICAL_LABELS = {
+    "AU_ABN": "ABN",
+    "AU_ACN": "ACN",
+    "AU_IHI": "IHI",
+    "AU_MEDICARE": "MEDICARE_NUMBER",
+    "AU_TFN": "TFN",
+}
+
+
 def _au_findings(entities):
     return [
         entity
@@ -222,7 +239,7 @@ def _single_au_finding(entities, text, value):
     start = text.index(value)
     assert (finding.start, finding.end) == (start, start + len(value))
     assert finding.text == value
-    assert finding.label == "national_id"
+    assert finding.label == _RAW_LABELS[finding.metadata["subtype"]]
     return finding
 
 
@@ -262,29 +279,32 @@ class TestExtractPii:
         text = template.format(v=value)
         entities = _extract(text)
         assert _au_findings(entities) == []
-        assert all(entity.label != "national_id" for entity in entities)
+        au_labels = {"national_id", *_RAW_LABELS.values()}
+        assert all(entity.label not in au_labels for entity in entities)
 
     @pytest.mark.parametrize(
-        ("template", "value"),
+        ("template", "value", "label"),
         [
-            ("Medicare number {v} on card.", "2123 45671 1"),
-            ("Medicare: {v} on card.", "3123456789"),
-            ("Tax file number {v} lodged.", "123 456 783"),
-            ("TFN {v}.", "123 456 783"),
-            ("Practice ABN: {v} on invoice.", "51 824 753 557"),
+            ("Medicare number {v} on card.", "2123 45671 1", "medicare_number"),
+            ("Medicare: {v} on card.", "3123456789", "medicare_number"),
+            ("Tax file number {v} lodged.", "123 456 783", "tfn"),
+            ("TFN {v}.", "123 456 783", "tfn"),
+            ("Practice ABN: {v} on invoice.", "51 824 753 557", "abn"),
             # Unspaced: also Medicare+IRN shaped; ABN claims the whole value.
-            ("Practice ABN: {v} on invoice.", "51824753557"),
+            ("Practice ABN: {v} on invoice.", "51824753557", "abn"),
             # The tail "123 456 782" is a valid TFN; it is not split off.
-            ("ABN {v} on invoice.", "98 123 456 782"),
-            ("Company ACN {v} registered.", "123 456 781"),
+            ("ABN {v} on invoice.", "98 123 456 782", "abn"),
+            ("Company ACN {v} registered.", "123 456 781", "acn"),
             # TFN-valid but ACN-invalid under an ACN label: one unvalidated
             # unit, no subtype claimed by either pattern.
-            ("Company ACN {v} registered.", "123 456 782"),
-            ("Patient IHI {v} confirmed.", _flip_last(VALID_IHI)),
-            ("Patient IHI {v} confirmed.", "8003 6012 3456 7890"),
+            ("Company ACN {v} registered.", "123 456 782", "acn"),
+            ("Patient IHI {v} confirmed.", _flip_last(VALID_IHI), "ihi"),
+            ("Patient IHI {v} confirmed.", "8003 6012 3456 7890", "ihi"),
         ],
     )
-    def test_labelled_invalid_value_is_kept_without_subtype(self, template, value):
+    def test_labelled_invalid_value_is_kept_without_subtype(
+        self, template, value, label
+    ):
         # A labelled checksum failure is likely a typo or OCR error of a real
         # identifier: it stays tagged (reduced score, unvalidated) so it is
         # still redacted, but it never claims an AU subtype. Exactly one unit
@@ -296,7 +316,8 @@ class TestExtractPii:
         overlapping = [e for e in entities if e.start < end and e.end > start]
         assert len(overlapping) == 1, [(e.text, e.label) for e in overlapping]
         kept = overlapping[0]
-        assert (kept.start, kept.end, kept.label) == (start, end, "national_id")
+        # The context-named AU label is kept so the value is still redacted.
+        assert (kept.start, kept.end, kept.label) == (start, end, label)
         assert kept.confidence < 0.45
         sweep = safety_sweep(text, [], lang="en", locale="en_AU")
         assert _au_findings(sweep) == []
@@ -415,8 +436,9 @@ class TestSafetySweep:
         entities = safety_sweep(text, [], lang="en", locale="en_AU")
         finding = _single_au_finding(entities, text, value)
         assert finding.metadata["subtype"] == subtype
-        # The legacy key is unchanged: it still names the raw entity type.
-        assert finding.metadata["id_subtype"] == "national_id"
+        # The legacy ``id_subtype`` key is only set for ``ID_NUM`` labels, and
+        # AU identifiers now carry their own canonical labels.
+        assert "id_subtype" not in finding.metadata
         assert finding.confidence >= 0.9
 
     @pytest.mark.parametrize(("subtype", "template", "value", "bare"), _POSITIVE_TABLE)
@@ -564,7 +586,7 @@ def _stub_detector(text, **kwargs):
         ("AU_ABN", f"Reference {SELFTEST_ABN} noted.", SELFTEST_ABN),
     ],
 )
-def test_pipeline_ccia_l3_emits_id_num_with_subtype(subtype, text, value):
+def test_pipeline_ccia_l3_emits_au_label_with_subtype(subtype, text, value):
     from openmed.core.pipeline import Pipeline
 
     result = Pipeline(policy="ccia_l3", model_detector=_stub_detector).run(text)
@@ -576,7 +598,7 @@ def test_pipeline_ccia_l3_emits_id_num_with_subtype(subtype, text, value):
     ]
     assert len(spans) == 1, [(s.start, s.end, s.metadata) for s in result.spans]
     span = spans[0]
-    assert span.canonical_label == "ID_NUM"
+    assert span.canonical_label == _CANONICAL_LABELS[subtype]
     assert span.metadata["subtype"] == subtype
     assert value not in result.redacted_text
 

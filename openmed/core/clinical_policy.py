@@ -21,6 +21,11 @@ CATEGORY_LABELS = MappingProxyType(
             {
                 "ID_NUM",
                 "SSN",
+                "MEDICARE_NUMBER",
+                "TFN",
+                "IHI",
+                "ABN",
+                "ACN",
                 "ACCOUNT_NUMBER",
                 "PASSWORD",
                 "PIN",

@@ -3,8 +3,8 @@
 Every identifier here is synthetic. Checksum-valid values are the published
 self-test values or are computed in ``tests/unit/core/test_au_identifiers.py``
 (``2123 45670 1`` Medicare, ``51 824 753 556`` ABN, ``8003601234567894`` IHI,
-``123 456 782`` TFN); phone, street and suburb values are fictional. The model
-is always stubbed: no network and no model download.
+``123 456 782`` TFN, ``123 456 780`` ACN); phone, street and suburb values are
+fictional. The model is always stubbed: no network and no model download.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ MEDICARE = "2123 45670 1"
 ABN = "51 824 753 556"
 IHI = "8003601234567894"
 TFN = "123 456 782"
+ACN = "123 456 780"
 PHONE = "0412 345 678"
 OCR_PHONE = "0412.345.678"
 ADDRESS = "Unit 3, 12 Smith Street, Randwick"
@@ -93,7 +94,9 @@ def _single(findings, subtype):
 # ---------------------------------------------------------------------------
 
 
-def test_medicare_returns_id_num_au_medicare_direct_identifier(client) -> None:
+def test_medicare_returns_medicare_number_au_medicare_direct_identifier(
+    client,
+) -> None:
     text = f"Medicare number {MEDICARE} on card."
     response = _detect(client, [_seg("s1", text)])
 
@@ -102,7 +105,7 @@ def test_medicare_returns_id_num_au_medicare_direct_identifier(client) -> None:
     assert set(body) == {"findings", "provenance"}
     finding = _single(body["findings"], "AU_MEDICARE")
     assert finding["segment_id"] == "s1"
-    assert finding["label"] == "ID_NUM"
+    assert finding["label"] == "MEDICARE_NUMBER"
     assert finding["policy_class"] == "DIRECT_IDENTIFIER"
     assert text[finding["start"] : finding["end"]] == MEDICARE
     assert 0.0 < finding["score"] <= 1.0
@@ -120,9 +123,10 @@ def test_medicare_returns_id_num_au_medicare_direct_identifier(client) -> None:
 @pytest.mark.parametrize(
     ("template", "value", "subtype", "label", "policy_class"),
     [
-        ("Practice ABN: {v} on invoice.", ABN, "AU_ABN", "ID_NUM", "DIRECT_IDENTIFIER"),
-        ("Patient IHI {v} confirmed.", IHI, "AU_IHI", "ID_NUM", "DIRECT_IDENTIFIER"),
-        ("Tax file number {v} lodged.", TFN, "AU_TFN", "ID_NUM", "DIRECT_IDENTIFIER"),
+        ("Practice ABN: {v} on invoice.", ABN, "AU_ABN", "ABN", "DIRECT_IDENTIFIER"),
+        ("Patient IHI {v} confirmed.", IHI, "AU_IHI", "IHI", "DIRECT_IDENTIFIER"),
+        ("Tax file number {v} lodged.", TFN, "AU_TFN", "TFN", "DIRECT_IDENTIFIER"),
+        ("Company ACN {v} registered.", ACN, "AU_ACN", "ACN", "DIRECT_IDENTIFIER"),
         ("Mobile: {v} (self-test).", PHONE, "AU_PHONE", "PHONE", "DIRECT_IDENTIFIER"),
         (
             "Home: {v} NSW 2031.",

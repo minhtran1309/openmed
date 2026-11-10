@@ -154,6 +154,11 @@ _G1A_LABELS = frozenset(
         "AGE",
         "ID_NUM",
         "SSN",
+        "MEDICARE_NUMBER",
+        "TFN",
+        "IHI",
+        "ABN",
+        "ACN",
     }
 )
 _G1B_LABELS = frozenset({"API_KEY", "ACCOUNT_NUMBER", "CREDIT_CARD", "IBAN"})
@@ -174,6 +179,11 @@ _G2_LABELS = frozenset(
 _CRITICAL_LABELS = frozenset(
     {
         "SSN",
+        "MEDICARE_NUMBER",
+        "TFN",
+        "IHI",
+        "ABN",
+        "ACN",
         "ID_NUM",
         "API_KEY",
         "ACCOUNT_NUMBER",

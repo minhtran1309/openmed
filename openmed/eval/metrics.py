@@ -99,6 +99,11 @@ ABSTENTION_ROUTE_REVIEW = "review"
 CRITICAL_ABSTENTION_LABELS = frozenset(
     {
         "SSN",
+        "MEDICARE_NUMBER",
+        "TFN",
+        "IHI",
+        "ABN",
+        "ACN",
         "ID_NUM",
         "API_KEY",
         "ACCOUNT_NUMBER",

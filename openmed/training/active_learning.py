@@ -16,6 +16,11 @@ DEFAULT_RECALL_FLOOR = 0.99
 CRITICAL_LABELS = frozenset(
     {
         "SSN",
+        "MEDICARE_NUMBER",
+        "TFN",
+        "IHI",
+        "ABN",
+        "ACN",
         "ID_NUM",
         "API_KEY",
         "ACCOUNT_NUMBER",

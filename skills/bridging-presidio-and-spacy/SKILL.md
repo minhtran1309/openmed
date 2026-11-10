@@ -6,7 +6,7 @@ metadata:
   project: OpenMed
   category: fhir-interop
   pairs: adjacent
-  version: "1.0"
+  version: "1.1-mt.1"
 ---
 
 # Bridging Presidio, spaCy & LangChain
@@ -91,7 +91,8 @@ Why merge instead of union: `merge_with_openmed` runs both detectors' spans
 through `merge_entities_with_semantic_units`, so overlapping/adjacent detections
 collapse into one correct span (e.g. `PHONE` from Presidio vs a partial OpenMed
 hit) rather than producing double redactions. Label mapping is built in
-(Presidio `PHONE_NUMBER` ↔ OpenMed `PHONE`, `US_SSN` ↔ `SSN`, etc.).
+(Presidio `PHONE_NUMBER` ↔ OpenMed `PHONE`, `US_SSN` ↔ `SSN`, `AU_MEDICARE` /
+`AU_TFN` / `AU_ABN` / `AU_ACN` ↔ `MEDICARE_NUMBER` / `TFN` / `ABN` / `ACN`, etc.).
 
 To push OpenMed spans into Presidio's **anonymizer**, convert back:
 

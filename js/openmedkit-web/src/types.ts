@@ -1,7 +1,9 @@
 export const OPENMED_SPAN_SCHEMA_VERSION = 1 as const;
 
 export const CANONICAL_LABELS = [
+  "ABN",
   "ACCOUNT_NUMBER",
+  "ACN",
   "AGE",
   "AMOUNT",
   "API_KEY",
@@ -23,6 +25,7 @@ export const CANONICAL_LABELS = [
   "HEIGHT",
   "IBAN",
   "ID_NUM",
+  "IHI",
   "IMEI",
   "IP_ADDRESS",
   "JOB_DEPARTMENT",
@@ -32,6 +35,7 @@ export const CANONICAL_LABELS = [
   "LOCATION",
   "MAC_ADDRESS",
   "MASKED_NUMBER",
+  "MEDICARE_NUMBER",
   "MIDDLE_NAME",
   "OCCUPATION",
   "ORDINAL_DIRECTION",
@@ -44,6 +48,7 @@ export const CANONICAL_LABELS = [
   "PREFIX",
   "SSN",
   "STREET_ADDRESS",
+  "TFN",
   "TIME",
   "URL",
   "USER_AGENT",

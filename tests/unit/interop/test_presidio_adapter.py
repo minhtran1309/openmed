@@ -69,6 +69,40 @@ def test_from_canonical_round_trip_preserves_presidio_labels():
     ] == [entity.label for entity in entities]
 
 
+def test_presidio_au_entities_map_to_au_canonical_labels():
+    # Synthetic checksum-valid AU values (see tests/unit/core/test_au_identifiers.py).
+    text = "Medicare 2123 45670 1 TFN 123 456 782 ABN 51 824 753 556 ACN 123 456 780"
+    results = [
+        RecognizerResultLike("AU_MEDICARE", 9, 21, 0.9),
+        RecognizerResultLike("AU_TFN", 26, 37, 0.9),
+        RecognizerResultLike("AU_ABN", 42, 56, 0.9),
+        RecognizerResultLike("AU_ACN", 61, 72, 0.9),
+    ]
+    entities = presidio.to_canonical(
+        results,
+        text=text,
+        config=presidio.PresidioAdapterConfig(preserve_presidio_labels=False),
+    )
+
+    assert [entity.label for entity in entities] == [
+        "MEDICARE_NUMBER",
+        "TFN",
+        "ABN",
+        "ACN",
+    ]
+    round_tripped = presidio.from_canonical(
+        entities,
+        result_cls=RecognizerResultLike,
+        config=presidio.PresidioAdapterConfig(preserve_presidio_labels=False),
+    )
+    assert [item.entity_type for item in round_tripped] == [
+        "AU_MEDICARE",
+        "AU_TFN",
+        "AU_ABN",
+        "AU_ACN",
+    ]
+
+
 def test_merge_with_openmed_routes_through_merger_and_resolves_overlaps(monkeypatch):
     calls = []
 

@@ -551,7 +551,9 @@ _FORMAT_PRESERVE_DATE_LABELS = frozenset({L.DATE, L.DATE_OF_BIRTH})
 
 _FORMAT_PRESERVE_GENERIC_ID_LABELS = frozenset(
     {
+        L.ABN,
         L.ACCOUNT_NUMBER,
+        L.ACN,
         L.API_KEY,
         L.BIC,
         L.BITCOIN_ADDRESS,
@@ -560,14 +562,17 @@ _FORMAT_PRESERVE_GENERIC_ID_LABELS = frozenset(
         L.ETHEREUM_ADDRESS,
         L.IBAN,
         L.ID_NUM,
+        L.IHI,
         L.IMEI,
         L.IP_ADDRESS,
         L.LITECOIN_ADDRESS,
         L.MAC_ADDRESS,
         L.MASKED_NUMBER,
+        L.MEDICARE_NUMBER,
         L.PASSWORD,
         L.PIN,
         L.SSN,
+        L.TFN,
         L.VEHICLE_REGISTRATION,
         L.VIN,
         L.ZIPCODE,
