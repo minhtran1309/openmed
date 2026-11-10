@@ -45,7 +45,7 @@ from .anonymizer.providers.clinical_ids import (
 )
 from .au_contact import AU_CONTACT_PII_PATTERNS
 from .au_identifiers import AU_IDENTIFIER_PII_PATTERNS
-from .au_records import AU_RECORD_PII_PATTERNS
+from .au_records import AU_HEADER_PII_PATTERNS, AU_RECORD_PII_PATTERNS
 from .lang_id_codemix import (
     TokenLanguageRun,
     TokenLIDHook,
@@ -5876,6 +5876,7 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
     *AU_IDENTIFIER_PII_PATTERNS,
     *AU_CONTACT_PII_PATTERNS,
     *AU_RECORD_PII_PATTERNS,
+    *AU_HEADER_PII_PATTERNS,
 ]
 
 

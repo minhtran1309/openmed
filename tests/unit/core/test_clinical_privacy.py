@@ -388,3 +388,31 @@ def test_partial_model_names_and_addresses_do_not_damage_clinical_text_or_leave_
         for value in ("Beispielweg", "10115", "Berlin")
     )
     assert result.deidentified_text.count("Morbus Parkinson") == 1
+
+
+@pytest.mark.parametrize("locale", ["en_AU", None])
+def test_context_detector_receives_the_document_locale(monkeypatch, locale):
+    from openmed.core import clinical_privacy
+
+    calls = []
+    real = clinical_privacy.detect_clinical_identifiers
+
+    def recording(text, **kwargs):
+        calls.append(kwargs)
+        return real(text, **kwargs)
+
+    monkeypatch.setattr(clinical_privacy, "detect_clinical_identifiers", recording)
+    document = ClinicalPrivacyDocument(
+        "note-au",
+        "Surname:\tQUANDT\nGiven Names: Zelphira Mae\n",
+        ClinicalPrivacyOptions(language="en", locale=locale),
+    )
+    result = processor().process_batch([document])[0]
+    assert result.complete
+    assert calls
+    assert {call["language"] for call in calls} == {"en"}
+    assert {call["locale"] for call in calls} == {result.language["locale"]}
+    if locale == "en_AU":
+        assert result.language["locale"] == "en_AU"
+        assert "QUANDT" not in result.deidentified_text
+        assert "Zelphira" not in result.deidentified_text

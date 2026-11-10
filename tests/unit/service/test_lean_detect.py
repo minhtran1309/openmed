@@ -181,6 +181,40 @@ def test_detect_ur_number_returns_au_ur(client, text, value) -> None:
     assert not _by_subtype(findings, "AU_TFN")
 
 
+def test_detect_header_values_with_model_disabled(client) -> None:
+    """The injected detector returns nothing; header values still come back."""
+    from tests.fixtures.au_report_header import (
+        EXISTING_VALUES,
+        HEADER,
+        HEADER_VALUES,
+    )
+
+    findings = _detect(client, [_seg("hdr", HEADER)]).json()["findings"]
+
+    found = {(HEADER[f["start"] : f["end"]], f["label"]) for f in findings}
+    assert found == HEADER_VALUES | EXISTING_VALUES
+    header = _by_subtype(findings, "AU_HEADER")
+    assert {(HEADER[f["start"] : f["end"]], f["label"]) for f in header} == (
+        HEADER_VALUES
+    )
+    assert all(":" not in HEADER[f["start"] : f["end"]] for f in findings)
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("GP: Dr Wren Pellow\nCLINICAL NOTES: cough", "Wren Pellow"),
+        ("Address: 12 Smith Street\nComments: none", "12 Smith Street"),
+    ],
+)
+def test_detect_header_value_stops_at_line_end(client, text, value) -> None:
+    findings = _detect(client, [_seg("s", text)]).json()["findings"]
+
+    finding = _single(findings, "AU_HEADER")
+    start = text.index(value)
+    assert (finding["start"], finding["end"]) == (start, start + len(value))
+
+
 def test_policy_class_comes_from_label_metadata(client) -> None:
     from openmed.core.labels import LABEL_METADATA
 

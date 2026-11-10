@@ -361,11 +361,13 @@ _POSTCODE_TABLE = [
 ]
 
 
+# These tables use prose context ("Lives at"). A value after an ``Address:``
+# header label is one ``AU_HEADER`` span (tests/unit/core/test_au_headers.py).
 @pytest.mark.usefixtures("no_model")
 class TestPostcodes:
     @pytest.mark.parametrize(("text", "state", "postcode"), _POSTCODE_TABLE)
     def test_extract_and_sweep(self, text, state, postcode):
-        line = f"Address: {text}."
+        line = f"Lives at {text}."
         for entities in (_extract(line), _sweep(line)):
             _single(entities, line, postcode, AU_POSTCODE, "postcode")
             location = _single(entities, line, state, AU_STATE, "location")
@@ -374,7 +376,7 @@ class TestPostcodes:
 
     @pytest.mark.parametrize(("text", "state", "postcode"), _POSTCODE_TABLE)
     def test_pipeline_ccia_l3(self, text, state, postcode):
-        line = f"Address: {text}."
+        line = f"Lives at {text}."
         result = _pipeline_spans(line)
         by_label = {
             span.canonical_label: line[span.start : span.end]
@@ -468,11 +470,13 @@ _ADDRESS_TABLE = [
 ]
 
 
+# See TestPostcodes: ``Address:`` header values are covered in
+# tests/unit/core/test_au_headers.py.
 @pytest.mark.usefixtures("no_model")
 class TestAddresses:
     @pytest.mark.parametrize("value", _ADDRESS_TABLE)
     def test_extract_and_sweep_single_span(self, value):
-        text = f"Address: {value}. Next of kin notified."
+        text = f"Lives at {value}. Next of kin notified."
         for entities in (_extract(text), _sweep(text)):
             _single(entities, text, value, AU_ADDRESS, "street_address")
             covering = [
@@ -485,7 +489,7 @@ class TestAddresses:
 
     @pytest.mark.parametrize("value", _ADDRESS_TABLE)
     def test_pipeline_ccia_l3(self, value):
-        text = f"Address: {value}. Next of kin notified."
+        text = f"Lives at {value}. Next of kin notified."
         result = _pipeline_spans(text)
         start = text.index(value)
         spans = [

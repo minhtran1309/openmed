@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 import importlib
 import inspect
 import logging
@@ -23,6 +24,7 @@ from typing import (
 from openmed.compliance.data_use import DataUseAction, DataUsePolicy, DataUseTag
 from openmed.utils.profiling import Timer
 
+from .au_records import bind_source_layout, source_layout_scope
 from .budget import RequestBudget, coerce_budget
 from .custom_recognizer import (
     CUSTOM_DENY_DETECTOR,
@@ -73,6 +75,17 @@ _RAW_SURFACE_METADATA_KEYS = frozenset(
         "value",
     }
 )
+
+
+def _au_source_layout_scope(run: Any) -> Any:
+    """Drop the run's bound source layout when ``Pipeline.run`` returns."""
+
+    @functools.wraps(run)
+    def scoped_run(self: Any, *args: Any, **kwargs: Any) -> Any:
+        with source_layout_scope():
+            return run(self, *args, **kwargs)
+
+    return scoped_run
 
 
 @dataclass(frozen=True)
@@ -388,6 +401,7 @@ class Pipeline:
 
         self.clinical_protect_options = protection_options_from_config(config)
 
+    @_au_source_layout_scope
     def run(
         self,
         text: str,
@@ -471,6 +485,12 @@ class Pipeline:
             normalized = self.stage1_normalize(original_text)
             if stage_telemetry.active:
                 stage_telemetry.set_input_length(len(original_text))
+        # Only the AU header patterns read this; see ``au_records``.
+        bind_source_layout(
+            normalized.normalized_text,
+            normalized.original_text,
+            normalized.offset_map.normalized_to_original_span,
+        )
         if budget_clock is not None:
             budget_clock.check("pipeline.stage1_normalize")
         _reject_unconverted_legacy_text(normalized)

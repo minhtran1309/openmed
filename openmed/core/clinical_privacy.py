@@ -183,7 +183,9 @@ class _ClinicalPipeline(Pipeline):
         entities = []
         if self.language_choice.language in {"de", "en"}:
             entities = detect_clinical_identifiers(
-                text, language=self.language_choice.language
+                text,
+                language=self.language_choice.language,
+                locale=self.language_choice.locale,
             )
         return self._prediction_result(text, entities, "clinical_context")
 

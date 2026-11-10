@@ -7,12 +7,14 @@ from datetime import datetime
 import pytest
 
 from openmed.core.clinical_identifiers import (
+    CLINICAL_IDENTIFIER_VERSION,
     detect_clinical_identifiers,
     personal_name_role,
 )
 from openmed.core.clinical_protect import filter_protected_spans, protect_spans
 from openmed.core.pipeline import Pipeline
 from openmed.processing.outputs import EntityPrediction, PredictionResult
+from tests.fixtures.au_report_header import HEADER, HEADER_VALUES
 
 
 def _entity(text, surface, label):
@@ -273,3 +275,114 @@ def test_german_postal_context_is_not_silently_applied_to_other_languages():
         )
         == []
     )
+
+
+# ---------------------------------------------------------------------------
+# Australian report header labels (en_AU only)
+# ---------------------------------------------------------------------------
+
+# ``detect_clinical_identifiers`` output for the AU header fixture before the
+# AU header rules existed; every non-AU call must still produce exactly this.
+_HEADER_WITHOUT_AU = [
+    (53, 60, "CITIZEN", "PERSON", "patient", "name_context"),
+    (73, 85, "Jane CITIZEN", "PERSON", "patient", "name_context"),
+    (380, 392, "02 9876 5433", "PHONE", "patient", "phone_context"),
+    (401, 413, "0414 555 666", "PHONE", "patient", "phone_context"),
+    (498, 517, "Dr Tamsin VELLACOTT", "PERSON", "clinician", "name_context"),
+    (535, 551, "Imelda O'Fenwick", "PERSON", "clinician", "name_context"),
+    (609, 626, "Dr Odile McTavish", "PERSON", "clinician", "name_context"),
+]
+_CLINICIAN_HEADER_NAMES = {
+    "Tamsin VELLACOTT",
+    "Imelda O'Fenwick",
+    "Corwin Ashgrove",
+    "Odile McTavish",
+    "Wren Pellow",
+}
+
+
+def _summary(entities):
+    return [
+        (
+            e.start,
+            e.end,
+            e.text,
+            e.label,
+            e.metadata["clinical_role"],
+            e.metadata["rule"],
+        )
+        for e in entities
+    ]
+
+
+@pytest.mark.parametrize("locale", [None, "en_US", "en_GB", "de_DE"])
+def test_non_au_locale_header_output_is_unchanged(locale):
+    entities = detect_clinical_identifiers(HEADER, language="en", locale=locale)
+    assert _summary(entities) == _HEADER_WITHOUT_AU
+    for e in entities:
+        assert e.confidence == 1.0
+        assert e.metadata == {
+            "detector": "rules:clinical_context",
+            "clinical_role": e.metadata["clinical_role"],
+            "rule": e.metadata["rule"],
+            "version": CLINICAL_IDENTIFIER_VERSION,
+        }
+    for e in entities:
+        assert HEADER[e.start : e.end] == e.text
+
+
+@pytest.mark.parametrize("locale", ["en_AU", "en-au", "EN_AU"])
+def test_en_au_header_values_are_found(locale):
+    entities = detect_clinical_identifiers(HEADER, language="en", locale=locale)
+    au = [e for e in entities if e.metadata["rule"] == "au_header"]
+    covered = {(HEADER[e.start : e.end], e.label) for e in entities}
+    for value, label in HEADER_VALUES:
+        # A clinician name the existing rules already cover with its title
+        # (``Dr Tamsin VELLACOTT``) is not duplicated.
+        assert (value, label) in covered or any(
+            e.start <= HEADER.index(value)
+            and HEADER.index(value) < e.end
+            and e.label == label
+            for e in entities
+        ), value
+    assert {(e.text, e.label) for e in au} <= HEADER_VALUES
+    assert {e.text for e in au} >= {
+        "CITIZEN, Jane",
+        "QUANDT",
+        "Zelphira Mae",
+        "04/07/1961",
+        "Unit 3, 12 Smith Street, Randwick NSW 2031",
+        "Wren Pellow",
+    }
+    for e in au:
+        assert HEADER[e.start : e.end] == e.text
+        assert e.metadata["subtype"] == "AU_HEADER"
+        assert e.metadata["detector"] == "rules:clinical_context"
+        expected_role = "clinician" if e.text in _CLINICIAN_HEADER_NAMES else "patient"
+        assert e.metadata["clinical_role"] == expected_role
+    # The comma form replaces the shorter ``CITIZEN`` name-context fragment.
+    assert ("CITIZEN", "PERSON") not in {(e.text, e.label) for e in entities}
+    starts = [(e.start, e.end) for e in entities]
+    assert starts == sorted(starts)
+
+
+def test_en_au_header_rules_need_english():
+    text = "Surname:\tQUANDT\nGiven Names: Zelphira Mae\n"
+    assert detect_clinical_identifiers(text, language="de", locale="en_AU") == (
+        detect_clinical_identifiers(text, language="de")
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("GP: Dr Wren Pellow\nCLINICAL NOTES: cough", {"Wren Pellow"}),
+        ("Surname: QUANDT\nPresenting Complaint: pain", {"QUANDT"}),
+        ("Address: 12 Smith Street\nComments: none", {"12 Smith Street"}),
+    ],
+)
+def test_en_au_header_values_stop_at_line_end(text, expected):
+    entities = detect_clinical_identifiers(text, language="en", locale="en_AU")
+    au = {e.text for e in entities if e.metadata["rule"] == "au_header"}
+    assert au == expected
+    assert all("\n" not in e.text for e in entities)

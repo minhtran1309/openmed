@@ -11,9 +11,21 @@ from datetime import date
 
 from openmed.processing.outputs import EntityPrediction
 
-from .labels import DATE_OF_BIRTH, ID_NUM, PERSON, PHONE, STREET_ADDRESS
+from .au_records import AU_HEADER_PII_PATTERNS, au_header_role
+from .labels import (
+    DATE_OF_BIRTH,
+    ID_NUM,
+    PERSON,
+    PHONE,
+    STREET_ADDRESS,
+    normalize_label,
+)
+from .pii_entity_merger import iter_pattern_spans
 
 CLINICAL_IDENTIFIER_VERSION = "clinical-identifiers-de-en-v3"
+# Carried only by the Australian header rules, so every other entity (and the
+# whole output of a non-AU call) keeps ``CLINICAL_IDENTIFIER_VERSION``.
+AU_HEADER_RULES_VERSION = f"{CLINICAL_IDENTIFIER_VERSION}+au-header-v1"
 _WORD = r"[A-ZÀ-ÖØ-Þ][^\W\d_]*(?:[\u0300-\u036f][^\W\d_]*)*(?:[’'-][^\W\d_]+)*"
 _INITIAL = r"[A-ZÀ-ÖØ-Þ]\."
 _MULTIWORD_FIELD = (
@@ -87,11 +99,29 @@ def personal_name_role(text: str, start: int, end: int) -> str | None:
     return None
 
 
-def detect_clinical_identifiers(text: str, *, language: str) -> list[EntityPrediction]:
+def detect_clinical_identifiers(
+    text: str, *, language: str, locale: str | None = None
+) -> list[EntityPrediction]:
     """Return anchored names, IDs, birth dates and bounded German postal addresses.
 
     All offsets address the supplied text. The caller must remap offsets if
     it applies normalization. Unsupported language requests fail explicitly.
+
+    Args:
+        text: Source text to scan.
+        language: ``"de"`` or ``"en"``.
+        locale: Optional locale. When it is Australian English (``en_AU``,
+            ``en-au`` ...) and ``language`` is ``"en"``, the values after
+            Australian report header labels are also returned with
+            ``metadata["rule"] == "au_header"`` and
+            ``metadata["subtype"] == "AU_HEADER"``. Any other locale leaves
+            the output unchanged.
+
+    Returns:
+        Entities sorted by start and end offset.
+
+    Raises:
+        ValueError: If ``language`` is not ``"de"`` or ``"en"``.
     """
     if language not in {"de", "en"}:
         raise ValueError("clinical context identifiers support de and en")
@@ -127,24 +157,75 @@ def detect_clinical_identifiers(text: str, *, language: str) -> list[EntityPredi
             ):
                 continue
             entities.append(_entity(text, start, end, label, "patient", rule))
+    if language == "en" and _is_en_au(locale):
+        entities = _with_au_header_values(text, entities)
     return sorted(entities, key=lambda entity: (entity.start, entity.end))
 
 
+def _is_en_au(locale: str | None) -> bool:
+    if not locale:
+        return False
+    return locale.strip().replace("-", "_").casefold() == "en_au"
+
+
+def _with_au_header_values(
+    text: str, entities: list[EntityPrediction]
+) -> list[EntityPrediction]:
+    """Add AU header values; a longer header value replaces a contained one.
+
+    A header value already covered by an existing entity (``Dr Tamsin
+    VELLACOTT`` around ``Tamsin VELLACOTT``) is not duplicated, and an
+    existing entity inside a longer header value (``CITIZEN`` inside
+    ``CITIZEN, Jane``) gives way to it.
+    """
+    for pattern in AU_HEADER_PII_PATTERNS:
+        label = normalize_label(pattern.entity_type)
+        role = au_header_role(pattern)
+        for start, end in iter_pattern_spans(text, pattern):
+            if any(e.start <= start and end <= e.end for e in entities):
+                continue
+            entities = [e for e in entities if not (start <= e.start and e.end <= end)]
+            entities.append(
+                _entity(
+                    text,
+                    start,
+                    end,
+                    label,
+                    role,
+                    "au_header",
+                    version=AU_HEADER_RULES_VERSION,
+                    subtype=pattern.subtype,
+                )
+            )
+    return entities
+
+
 def _entity(
-    text: str, start: int, end: int, label: str, role: str, rule: str
+    text: str,
+    start: int,
+    end: int,
+    label: str,
+    role: str,
+    rule: str,
+    *,
+    version: str = CLINICAL_IDENTIFIER_VERSION,
+    subtype: str | None = None,
 ) -> EntityPrediction:
+    metadata = {
+        "detector": "rules:clinical_context",
+        "clinical_role": role,
+        "rule": rule,
+        "version": version,
+    }
+    if subtype is not None:
+        metadata["subtype"] = subtype
     return EntityPrediction(
         text=text[start:end],
         label=label,
         confidence=1.0,
         start=start,
         end=end,
-        metadata={
-            "detector": "rules:clinical_context",
-            "clinical_role": role,
-            "rule": rule,
-            "version": CLINICAL_IDENTIFIER_VERSION,
-        },
+        metadata=metadata,
     )
 
 
@@ -167,6 +248,7 @@ def _valid_date(value: str, language: str) -> bool:
 
 
 __all__ = [
+    "AU_HEADER_RULES_VERSION",
     "CLINICAL_IDENTIFIER_VERSION",
     "detect_clinical_identifiers",
     "personal_name_role",
