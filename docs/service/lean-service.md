@@ -435,19 +435,33 @@ No github.com access is needed. Copy the artifacts over any local channel.
 Wheel folder:
 
 ```bash
-pip install --no-index --find-links /path/to/wheelhouse "openmed[service,lean-pdf]"
+pip install --no-index --find-links /path/to/wheelhouse "openmed[service,lean-pdf,hf]"
 ```
 
 Image via `docker save` / `docker load`:
 
 ```bash
-docker save openmed-lean:v3.2.0-mt.1 -o openmed-lean.tar     # build host
+docker save openmed-lean:v3.2.0-mt.2 -o openmed-lean.tar     # build host
 docker load -i openmed-lean.tar                              # target host
 docker run --rm -p 8080:8080 \
   -e OPENMED_AUDIT_KEY="$(cat /path/to/openmed-audit-key)" \
-  openmed-lean:v3.2.0-mt.1
+  -e HF_HUB_OFFLINE=1 \
+  -v /path/to/huggingface-cache:/root/.cache/huggingface:ro \
+  openmed-lean:v3.2.0-mt.2
 curl localhost:8080/health
+curl -X POST localhost:8080/v1/selftest     # six "pass" results
 ```
+
+The image carries the model runtime (the `hf` extra, with CPU-only torch) but
+no model weights. The PII model (`OPENMED_LEAN_MODEL`, default the English PII
+model) loads on the first `/v1/detect` or `/v1/selftest` request from the
+Hugging Face cache. On a PHI host, pre-populate a cache directory on a machine
+with network access (for example, run one selftest there, or
+`hf download <model>`), copy it over with the image, mount it read-only, and
+set `HF_HUB_OFFLINE=1` so the container never reaches the network. Without a
+mounted cache, the first request downloads the model and so needs network
+access. `/health` passes before the model loads, so use `/v1/selftest` to
+confirm detection works.
 
 The image will not start without `-e OPENMED_AUDIT_KEY`: the container exits
 with `AUDIT_KEY_MISSING`, so the health check never passes. The consumer needs

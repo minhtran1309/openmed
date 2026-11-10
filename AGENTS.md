@@ -94,3 +94,51 @@ When a file is untracked, ignored, private-looking, generated, or outside the re
 ## OpenMedKit and Multimodal Work
 
 Swift and Python surfaces should evolve together unless a plan explicitly scopes a feature to one platform. OpenMedKit priorities are on-device document intake, OCR, PII redaction, structured extraction, task packs, model catalog/download/cache UX, and later pose, audio, speech, and sensor pipelines. Any borderline or medical-device-style feature must surface disclaimers and must not auto-trigger clinical decisions. Apple Foundation Models paths must stay on-device only; reject any cloud fallback for PHI workflows.
+
+## Fork: Australian De-identification Service (`v3.2.0-mt.N`)
+
+This fork (branch `feat/au-pii-support`, base upstream `29ffa7005`) adds an Australian de-identification layer and a lean REST service for one consumer. It is released separately from upstream openmed: fork releases are tagged `v3.2.0-mt.N` and built with `scripts/release_mt.sh`, never through `.github/workflows/publish.yml`. Keep fork features isolated, so that upstream behaviour does not change.
+
+### Scope and isolation rules
+
+- **AU only, behind the locale.** Every AU recogniser runs only for the `en_AU` locale. The `ccia_*` policies imply `en_AU`. Output for `locale=None`, `en_US`, `en_GB` and every other locale, and for every non-`ccia_*` policy, must stay byte-identical to upstream. Each AU module has a `test_non_au_locale_unchanged` test; extend it when you add patterns.
+- **Wire in through the hooks.** AU patterns are `PIIPattern` lists appended to `_AU_ENGLISH_PII_PATTERNS` in `openmed/core/pii_i18n.py`, one hook line per list. Do not edit the shared patterns for other locales.
+- **Fail closed.** When unsure, over-redact rather than leak. Record accepted over-redaction in the test docstring.
+- **No unlabelled number detection.** Record-number and clinician-ID patterns need a label directly before the value. Checksum identifiers (Medicare, IHI, TFN, ABN, ACN, provider number) must pass their validator.
+- **Keep fork changes reviewable as a set.** Fork edits to shared modules (`pii.py`, `pipeline.py`, `audit.py`, `labels.py`, `safety_sweep.py`, `apply_spans.py`, `safe_harbor.py`, `verify_pdf.py`) must be minimal and covered by tests. Prefer new `au_*` modules or `openmed/service/lean/` over changing upstream logic.
+
+### Where the fork code lives
+
+| Area | Files |
+|---|---|
+| AU recognisers | `openmed/core/au_identifiers.py` (Medicare/IRN, IHI, TFN, ABN, ACN); `au_contact.py` (phone, postcode, address, state); `au_records.py` (UR/MRN `AU_UR`, header fields `AU_HEADER`, title-line MRN, print-footer USERNAME, labelled-value propagation, table header vocabulary); `au_dates.py` (day-first dates); `au_nrp.py` (ETHNICITY/NRP deny list); `au_clinician_ids.py` (AHPRA, DVA, Medicare provider number) |
+| Labels | AU canonical labels in `openmed/core/labels.py`: `MEDICARE_NUMBER`, `IHI`, `TFN`, `ABN`, `ACN`, `AHPRA_NUMBER`, `DVA_NUMBER`, `MEDICARE_PROVIDER_NUMBER`. They are mirrored in the policy JSONs, `thresholds.json`, the schemas and the Android/Swift/JS SDKs. A new label needs the full sweep; use commit `f1630fe1a` as the checklist |
+| Policies | `openmed/core/policies/ccia_l1.json`, `ccia_l2.json` and `ccia_l3.json`, plus the `shift` action. They keep clinical, oncology, age and gender concepts; shift dates; and mask every DIRECT_IDENTIFIER |
+| Apply and audit | `openmed/core/apply_spans.py` (`mark`, date shift, `[LABEL_n]` and `[PERSON_FN/MN/LN_n]` tags); `openmed/core/apply_audit.py` (signed audit); `openmed/compliance/safe_harbor.py` (`any_policy` attestation) |
+| Lean service | `openmed/service/lean/`. Endpoints: `/health`, `/v1/provenance`, `/v1/detect` (including `table_header`/`cells`), `/v1/apply`, `/v1/selftest`, `/v1/verify/pdf`, `/v1/policies/{name}/coverage`. The contract is documented in `docs/service/lean-service.md` |
+| Image | `docker/lean-service.Dockerfile` installs `[service,lean-pdf,hf]` with CPU-only torch. No model weights are baked in |
+
+### Runtime configuration
+
+- **`OPENMED_AUDIT_KEY`** is required. The service refuses to start without it (`AUDIT_KEY_MISSING`). It signs every `/v1/apply` audit and keys `input_hash` and `text_hash`. Never log, echo, bake into an image or commit it. Tests get it from `tests/unit/service/conftest.py`; do not set it globally, because the CLI reads the same variable.
+- **`OPENMED_LEAN_MODEL`** selects the PII model; the default is the English PII model. The model loads on the first detect or selftest request. On PHI hosts, mount a pre-populated Hugging Face cache and set `HF_HUB_OFFLINE=1`.
+- **`OPENMED_FORK_TAG`** is set by the image build and reported by `/v1/provenance`.
+- **Extras:** the lean service needs `service`, `lean-pdf` (pdfplumber, pdfminer.six, pypdfium2) and `hf` (torch, transformers). PyMuPDF is AGPL and must never become a dependency. Its integration test is opt-in, so run it in a throwaway environment.
+
+### Privacy invariants for fork code
+
+- No raw text, original values, surrogate values, offset days or keys in any response, log, error, audit or attestation. Audits carry offsets, keyed hashes and provenance only.
+- **Uploads:** `/v1/verify/pdf` parses uploads in memory with no temp files, runs in the threadpool, caps requests at 256 regions and 64 MiB, and uses a 25 Mpx render budget. It silences the `pdfminer`, `pdfplumber`, `pypdfium2` and `PIL` loggers, which would otherwise log page text.
+- **Dates:** a shifted date is residual risk in the attestation, not removal.
+- **Test data:** use only synthetic values, with Medicare, IHI and similar numbers produced by the repo validators and phones from the ACMA fictional ranges. Never copy values from real reports.
+
+### Tests and checks for fork work
+
+- **Model-free tests:** use `Pipeline(policy="ccia_l3", model_detector=stub)`, where the stub returns an empty `PredictionResult`, and `TestClient(create_app())` with `get_model_detector` overridden. See `tests/unit/core/test_au_dates.py` and `tests/unit/service/test_lean_detect.py`.
+- **Real model:** stubbed tests miss offset and model-interplay leaks, so run the real-model `/v1/selftest` before a release: `HF_HUB_OFFLINE=1`, `OPENMED_AUDIT_KEY` set, `with TestClient(create_app())` so the lifespan runs. It must report six `pass` results.
+- **Fast suite:** `-m "not slow and not fuzz"`. The known upstream failures are `test_deletion_verify` (windows ×2) and `test_grpc_generated_stubs_are_current`.
+- **Releases:** build from a clean checkout of the tagged commit; `release_mt.sh` refuses a dirty tree. Tags are created and pushed by the repository owner only.
+
+### Local planning material (never commit)
+
+Fork plans, tickets, release notes and the synthetic demo set live in the untracked `openmed-fork-integration/` folder. Its `Data_to_learn/` subfolder holds **real patient reports**. Never stage, commit, upload, quote or copy from it, and never read it unless the user explicitly scopes the files. `API_USAGE.md` and `.superpowers/` are also local only.
