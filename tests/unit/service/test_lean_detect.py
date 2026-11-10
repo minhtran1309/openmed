@@ -215,6 +215,41 @@ def test_detect_header_value_stops_at_line_end(client, text, value) -> None:
     assert (finding["start"], finding["end"]) == (start, start + len(value))
 
 
+@pytest.mark.parametrize(
+    ("policy", "action"),
+    [("ccia_l1", "keep"), ("ccia_l2", "mark"), ("ccia_l3", "mark")],
+)
+def test_detect_nrp_phrase_is_one_span_with_policy_action(
+    client, policy, action
+) -> None:
+    """ccia_l1 keeps the NRP term; ccia_l2/l3 mask it (rendered as a tag)."""
+    value = "Aboriginal and Torres Strait Islander"
+    text = f"Patient identifies as {value} today."
+    findings = _detect(client, [_seg("s", text)], policy=policy).json()["findings"]
+
+    finding = _single(findings, "NRP")
+    start = text.index(value)
+    assert (finding["start"], finding["end"]) == (start, start + len(value))
+    assert finding["label"] == "ETHNICITY"
+    assert len(findings) == 1
+
+    spans = [
+        {"span_id": "n", "start": f["start"], "end": f["end"], "label": f["label"]}
+        for f in findings
+    ]
+    applied = client.post(
+        "/v1/apply",
+        json={
+            "document": [{"segment_id": "s", "text": text, "spans": spans}],
+            "treatment": "mark",
+            "policy": policy,
+            "offset_days": 10,
+        },
+    ).json()
+    assert [span["action"] for span in applied["spans"]] == [action]
+    assert (value in applied["segments"][0]["text"]) == (action == "keep")
+
+
 def test_policy_class_comes_from_label_metadata(client) -> None:
     from openmed.core.labels import LABEL_METADATA
 
