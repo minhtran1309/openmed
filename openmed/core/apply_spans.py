@@ -515,7 +515,7 @@ _MONTH_LOOKUP: Final[Mapping[str, int]] = {
     "sept": 9,
 }
 _DAY_MONTH_YEAR_RE: Final = re.compile(
-    r"(?P<day>[0-9]{1,2})(?P<ord>st|nd|rd|th)?(?P<s1>\s+|\s*-\s*)"
+    r"(?P<day>[0-9]{1,2})(?P<ord>st|nd|rd|th)?(?P<s1>\s+(?:of\s+)?|\s*-\s*)"
     r"(?P<mon>[A-Za-z]+)(?P<dot>\.)?(?P<s2>,?\s+|\s*-\s*)(?P<year>[0-9]{4}|[0-9]{2})",
     re.IGNORECASE,
 )
