@@ -8,7 +8,15 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    model_validator,
+)
 
 from .errors import ERROR_CODES
 
@@ -57,12 +65,41 @@ class PolicyCoverageResponse(BaseModel):
     fingerprint: str
 
 
+class DetectCell(BaseModel):
+    """One table cell of a detect segment: code-point offsets into its text."""
+
+    model_config = ConfigDict(extra="forbid")
+    start: StrictInt
+    end: StrictInt
+
+
 class DetectSegment(BaseModel):
-    """One segment of a ``POST /v1/detect`` request."""
+    """One segment of a ``POST /v1/detect`` request.
+
+    A segment may be one table row: ``table_header`` names the columns and
+    ``cells[i]`` gives the offsets of column ``i``'s cell in ``text``. Both
+    are sent together, with equal lengths, and every cell must satisfy
+    ``0 <= start <= end <= len(text)``; anything else is ``INVALID_REQUEST``.
+    """
 
     model_config = ConfigDict(extra="forbid")
     segment_id: StrictStr = Field(min_length=1)
     text: StrictStr
+    table_header: list[StrictStr] | None = None
+    cells: list[DetectCell] | None = None
+
+    @model_validator(mode="after")
+    def _check_table(self) -> DetectSegment:
+        if self.table_header is None and self.cells is None:
+            return self
+        if self.table_header is None or self.cells is None:
+            raise ValueError("table_header and cells must be sent together")
+        if len(self.table_header) != len(self.cells):
+            raise ValueError("table_header and cells differ in length")
+        for cell in self.cells:
+            if not 0 <= cell.start <= cell.end <= len(self.text):
+                raise ValueError("cell offsets are outside the segment text")
+        return self
 
 
 class DetectRequest(BaseModel):
@@ -89,6 +126,8 @@ class DetectFinding(BaseModel):
     subtype: str | None = None
     score: float
     policy_class: str
+    #: Set only on findings from table column classification.
+    source: Literal["model", "pattern", "table-column"] | None = None
 
 
 class DetectResponse(BaseModel):

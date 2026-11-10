@@ -22,7 +22,8 @@ from openmed.core.policy import PolicyProfile, load_policy
 from openmed.core.provenance import LEAN_MODEL_ENV
 
 from .errors import LeanError
-from .schemas import DetectRequest
+from .schemas import DetectCell, DetectRequest
+from .table_columns import table_column_findings
 
 logger = logging.getLogger("openmed.service.lean")
 
@@ -93,6 +94,8 @@ def _segment_findings(
     text: str,
     *,
     preserve_whitespace: bool,
+    table_header: list[str] | None = None,
+    cells: list[DetectCell] | None = None,
 ) -> list[dict[str, Any]]:
     if not text.strip():
         return []
@@ -115,6 +118,9 @@ def _segment_findings(
         if subtype is not None:
             finding["subtype"] = subtype
         findings.append(finding)
+    if table_header is not None and cells is not None:
+        # In addition to, not deduplicated against, model and pattern hits.
+        findings.extend(table_column_findings(segment_id, text, table_header, cells))
     findings.sort(key=lambda f: (f["start"], f["end"], f["label"]))
     return findings
 
@@ -162,6 +168,8 @@ def detect_segments(
                         segment.segment_id,
                         segment.text,
                         preserve_whitespace=request.preserve_whitespace,
+                        table_header=segment.table_header,
+                        cells=segment.cells,
                     )
                 )
     except Exception as exc:

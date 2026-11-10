@@ -104,8 +104,20 @@ import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Iterator, List, Sequence
+from types import MappingProxyType
+from typing import Iterator, List, Mapping, Sequence
 
+from .labels import (
+    DATE_OF_BIRTH,
+    EMAIL,
+    FIRST_NAME,
+    ID_NUM,
+    LAST_NAME,
+    MEDICARE_NUMBER,
+    PERSON,
+    PHONE,
+    STREET_ADDRESS,
+)
 from .pii_entity_merger import PIIPattern
 
 AU_UR = "AU_UR"
@@ -290,6 +302,70 @@ AU_HEADER_CONTEXT_WORDS: tuple[str, ...] = (
     "Reported by",
     "Requesting Clinician",
     "GP",
+)
+
+
+def table_header_key(header: str) -> str:
+    """Normalise a table header the way column classification keys it.
+
+    Matches ``openmed.multimodal.tabular_csv``'s header key: lowercase, with
+    every non-alphanumeric character removed, so ``U.R.`` and ``UR`` agree.
+
+    Args:
+        header: The header text as it appears in the table.
+
+    Returns:
+        The normalised key, for example ``"givennames"`` for ``Given Name(s)``.
+    """
+    return re.sub(r"[^a-z0-9]", "", header.strip().lower())
+
+
+_TABLE_PERSON_HEADERS = (
+    "Patient Name",
+    "Name",
+    "NOK",
+    "Next of Kin",
+    "Referring Doctor",
+    "Referred by",
+    "Reported by",
+    "Requesting Clinician",
+    "GP",
+)
+
+#: AU table header text -> canonical label, for ``classify_columns``'
+#: ``header_heuristics``. A column is classified from its header only.
+AU_TABLE_HEADER_LABELS: Mapping[str, str] = MappingProxyType(
+    {
+        **{word: ID_NUM for word in AU_RECORD_CONTEXT_WORDS},
+        **{word: PERSON for word in _TABLE_PERSON_HEADERS},
+        "Surname": LAST_NAME,
+        "Given Name": FIRST_NAME,
+        "Given Names": FIRST_NAME,
+        "Given Name(s)": FIRST_NAME,
+        "D.O.B": DATE_OF_BIRTH,
+        "DOB": DATE_OF_BIRTH,
+        "Date of Birth": DATE_OF_BIRTH,
+        "Address": STREET_ADDRESS,
+        "Medicare No": MEDICARE_NUMBER,
+        "Ph": PHONE,
+        "Phone": PHONE,
+        "Mob": PHONE,
+        "Mobile": PHONE,
+        "Tel": PHONE,
+        "Fax": PHONE,
+        "Email": EMAIL,
+    }
+)
+
+#: Normalised header key -> subtype. Only record-number columns get one: a
+#: header proves which field a cell is, not that its value passes a checksum.
+AU_TABLE_HEADER_SUBTYPES: Mapping[str, str] = MappingProxyType(
+    {
+        **{table_header_key(word): AU_UR for word in AU_RECORD_CONTEXT_WORDS},
+        # Generic record-number headers that tabular_csv already maps to ID_NUM.
+        "mrn": AU_UR,
+        "patientid": AU_UR,
+    }
 )
 
 _GAP = r"[ \t]+"

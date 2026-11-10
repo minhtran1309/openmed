@@ -69,6 +69,30 @@ profile sets an AU `implied_locale`, which in mt.1 means the `ccia_l1`,
 `ccia_l2` and `ccia_l3` policies. Under any other policy, AU identifiers are
 found only if the PII model itself tags them.
 
+### Table rows
+
+A segment may be one table row. Send `table_header` (the column headers) and
+`cells` (`[{start, end}, ...]`, the offsets of each cell in `text`, for
+example in `"Jane CITIZEN | 04/07/1961 | 0012345"`). `cells[i]` belongs to
+`table_header[i]`. Both fields are sent together, with equal lengths, and each
+cell must satisfy `0 <= start <= end <= len(text)`; otherwise the request is
+`INVALID_REQUEST`.
+
+Each column is classified from its header alone, with the
+`openmed.multimodal` column classifier extended with the AU header vocabulary
+(`Name`, `D.O.B`, `UR`/`URN`, `MRN`, `Lab No`, `Medicare No`, `Surname`,
+`Ph`/`Mobile`, `NOK`, ...). Cell values are never sampled. Every non-blank cell
+in a direct- or quasi-identifier column gives one extra finding over the cell,
+trimmed of surrounding whitespace, with `source: "table-column"`, the column's
+canonical label (for example `PERSON`, `DATE_OF_BIRTH`, `ID_NUM`), `score`
+1.0 and its `policy_class`. Only record-number columns carry a subtype
+(`AU_UR`). These findings are in addition to the model and pattern findings
+for the same text; they are not deduplicated, so merge overlaps on your side.
+Unknown headers (such as `Exam`) add nothing, and a row whose cells all equal
+their headers (the header row) adds nothing. Segments without `table_header`
+give exactly the same response as before; only table-column findings carry
+`source`.
+
 ## Apply
 
 `POST /v1/apply` takes a `document` of segments, each with its `text` and the

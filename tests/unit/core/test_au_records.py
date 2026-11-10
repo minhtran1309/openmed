@@ -384,3 +384,46 @@ def test_non_au_locale_unchanged(monkeypatch, policy, locale):
             kept = [p for p in patterns if p not in AU_RECORD_PII_PATTERNS]
             monkeypatch.setitem(table, key, kept)
     assert outputs() == with_hook
+
+
+# ---------------------------------------------------------------------------
+# Table header vocabulary (ticket 16)
+# ---------------------------------------------------------------------------
+
+
+def test_table_header_vocabulary_covers_au_labels():
+    from openmed.core.au_records import (
+        AU_HEADER_CONTEXT_WORDS,
+        AU_TABLE_HEADER_LABELS,
+        AU_TABLE_HEADER_SUBTYPES,
+        table_header_key,
+    )
+
+    for word in AU_RECORD_CONTEXT_WORDS:
+        assert AU_TABLE_HEADER_LABELS[word] == "ID_NUM", word
+        assert AU_TABLE_HEADER_SUBTYPES[table_header_key(word)] == AU_UR, word
+    for word in AU_HEADER_CONTEXT_WORDS:
+        assert word in AU_TABLE_HEADER_LABELS, word
+    for word in ("D.O.B", "DOB", "Date of Birth"):
+        assert AU_TABLE_HEADER_LABELS[word] == "DATE_OF_BIRTH"
+    assert AU_TABLE_HEADER_LABELS["Surname"] == "LAST_NAME"
+    assert AU_TABLE_HEADER_LABELS["Given Name(s)"] == "FIRST_NAME"
+    assert AU_TABLE_HEADER_LABELS["NOK"] == "PERSON"
+    assert AU_TABLE_HEADER_LABELS["Address"] == "STREET_ADDRESS"
+    assert AU_TABLE_HEADER_LABELS["Ph"] == "PHONE"
+    assert AU_TABLE_HEADER_LABELS["Email"] == "EMAIL"
+    assert AU_TABLE_HEADER_LABELS["Medicare No"] == "MEDICARE_NUMBER"
+    # Only record-number columns carry a subtype.
+    assert set(AU_TABLE_HEADER_SUBTYPES.values()) == {AU_UR}
+    for key in ("name", "dob", "ph", "medicareno"):
+        assert key not in AU_TABLE_HEADER_SUBTYPES
+
+
+def test_table_header_key_matches_tabular_normalisation():
+    from openmed.core.au_records import AU_TABLE_HEADER_LABELS, table_header_key
+    from openmed.multimodal.tabular_csv import _header_key
+
+    assert table_header_key("U.R.") == "ur"
+    assert table_header_key("Given Name(s)") == "givennames"
+    for header in AU_TABLE_HEADER_LABELS:
+        assert table_header_key(header) == _header_key(header)
