@@ -150,7 +150,7 @@ from openmed import normalize_label
 
 note = (
     "Medicare 2123 45670 1, TFN 123 456 782, IHI 8003 6012 3456 7894, "
-    "ABN 51 824 753 556, ACN 123 456 780."
+    "ABN 11 345 678 919, ACN 123 456 780."
 )
 
 result = openmed.extract_pii(note, lang="en", locale="en_AU")

@@ -71,7 +71,7 @@ def test_from_canonical_round_trip_preserves_presidio_labels():
 
 def test_presidio_au_entities_map_to_au_canonical_labels():
     # Synthetic checksum-valid AU values (see tests/unit/core/test_au_identifiers.py).
-    text = "Medicare 2123 45670 1 TFN 123 456 782 ABN 51 824 753 556 ACN 123 456 780"
+    text = "Medicare 2123 45670 1 TFN 123 456 782 ABN 11 345 678 919 ACN 123 456 780"
     results = [
         RecognizerResultLike("AU_MEDICARE", 9, 21, 0.9),
         RecognizerResultLike("AU_TFN", 26, 37, 0.9),

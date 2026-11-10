@@ -219,13 +219,49 @@ def test_dates_shift_and_age_gender_kept(name: str) -> None:
     assert profile.action_for("GENDER") == "keep"
 
 
-def test_l1_masks_every_direct_identifier_except_dob() -> None:
-    profile = load_policy("ccia_l1")
+@pytest.mark.parametrize("name", CCIA_POLICIES)
+def test_every_level_masks_every_direct_identifier_except_dob(name: str) -> None:
+    # A DIRECT_IDENTIFIER label without an explicit entry would fall back to the
+    # class action ``shift``; every level must name an explicit mask instead.
+    profile = load_policy(name)
     for label in CANONICAL_LABELS:
         if policy_label_for(label) != DIRECT_IDENTIFIER:
             continue
         expected = "shift" if label == "DATE_OF_BIRTH" else "mask"
         assert profile.action_for(label) == expected, label
+
+
+SYNTHETIC_VISIT_DATE = "14/07/2023"
+
+
+def _date_detector(text: str, **_kwargs: object) -> PredictionResult:
+    from openmed.processing.outputs import EntityPrediction
+
+    start = text.index(SYNTHETIC_VISIT_DATE)
+    return PredictionResult(
+        text=text,
+        entities=[
+            EntityPrediction(
+                text=SYNTHETIC_VISIT_DATE,
+                label="DATE",
+                confidence=0.97,
+                start=start,
+                end=start + len(SYNTHETIC_VISIT_DATE),
+            )
+        ],
+        model_name="synthetic-date-detector",
+        timestamp="2026-01-01T00:00:00Z",
+    )
+
+
+@pytest.mark.parametrize("name", CCIA_POLICIES)
+def test_pipeline_masks_shift_dates_in_redacted_text(name: str) -> None:
+    # ``shift`` is rendered only by ``apply_spans``; Pipeline.redacted_text
+    # must fall back to a mask so a date can never leak.
+    text = f"Seen {SYNTHETIC_VISIT_DATE} in clinic."
+    result = Pipeline(policy=name, model_detector=_date_detector).run(text)
+    assert SYNTHETIC_VISIT_DATE not in result.redacted_text
+    assert result.redacted_text == "Seen [date] in clinic."
 
 
 @pytest.mark.parametrize("name", CCIA_POLICIES)

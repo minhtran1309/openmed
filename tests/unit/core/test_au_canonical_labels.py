@@ -34,7 +34,7 @@ from openmed.processing.outputs import PredictionResult
 MEDICARE = "2123 45670 1"
 TFN = "123 456 782"
 IHI = "8003601234567894"
-ABN = "51 824 753 556"
+ABN = "11 345 678 919"
 ACN = "123 456 780"
 
 assert validate_australian_medicare(MEDICARE)

@@ -68,7 +68,7 @@ def _flip_last(value: str) -> str:
 
 
 # Self-test values named by the ticket.
-SELFTEST_ABN = "51 824 753 556"
+SELFTEST_ABN = "11 345 678 919"
 SELFTEST_MEDICARE = "2123 45670 1"
 
 VALID_ACN = "123 456 780"  # ACN-valid, deliberately not TFN-valid.
@@ -140,19 +140,19 @@ def _au_findings(entities):
 
 
 class TestValidators:
-    @pytest.mark.parametrize("value", [SELFTEST_ABN, "51824753556", "51 824 753 556"])
+    @pytest.mark.parametrize("value", [SELFTEST_ABN, "11345678919", "11 345 678 919"])
     def test_abn_accepts_valid(self, value):
         assert validate_australian_abn(value)
 
     @pytest.mark.parametrize(
         "value",
         [
-            "51 824 753 557",  # check fails
+            "11 345 678 918",  # check fails
             "12345678901",  # random 11 digits
-            "5182475355",  # 10 digits
-            "518247535560",  # 12 digits
-            "01 824 753 556",  # leading zero
-            "ABN 51 824 753 556",  # decorated
+            "1134567891",  # 10 digits
+            "113456789190",  # 12 digits
+            "01 345 678 919",  # leading zero
+            "ABN 11 345 678 919",  # decorated
         ],
     )
     def test_abn_rejects_invalid(self, value):
@@ -209,7 +209,7 @@ def test_au_patterns_registered_only_for_en_au():
 # (subtype, context sentence template, value, bare-score)
 _POSITIVE_TABLE = [
     ("AU_ABN", "Practice ABN: {v} on invoice.", SELFTEST_ABN, 0.45),
-    ("AU_ABN", "Practice ABN: {v} on invoice.", "51824753556", 0.45),
+    ("AU_ABN", "Practice ABN: {v} on invoice.", "11345678919", 0.45),
     ("AU_ACN", "Company ACN {v} registered.", VALID_ACN, 0.45),
     ("AU_ACN", "Company ACN {v} registered.", "123456780", 0.45),
     ("AU_ACN", "Company ACN {v} registered.", VALID_ACN_TFN_COLLISION, None),
@@ -268,7 +268,7 @@ class TestExtractPii:
     @pytest.mark.parametrize(
         ("template", "value"),
         [
-            (_BARE_TEMPLATE, "51 824 753 557"),
+            (_BARE_TEMPLATE, "11 345 678 918"),
             (_BARE_TEMPLATE, "123 456 781"),
             (_BARE_TEMPLATE, _flip_last(VALID_IHI)),
             (_BARE_TEMPLATE, "2123 45671 1"),
@@ -289,9 +289,9 @@ class TestExtractPii:
             ("Medicare: {v} on card.", "3123456789", "medicare_number"),
             ("Tax file number {v} lodged.", "123 456 783", "tfn"),
             ("TFN {v}.", "123 456 783", "tfn"),
-            ("Practice ABN: {v} on invoice.", "51 824 753 557", "abn"),
+            ("Practice ABN: {v} on invoice.", "11 345 678 918", "abn"),
             # Unspaced: also Medicare+IRN shaped; ABN claims the whole value.
-            ("Practice ABN: {v} on invoice.", "51824753557", "abn"),
+            ("Practice ABN: {v} on invoice.", "11345678918", "abn"),
             # The tail "123 456 782" is a valid TFN; it is not split off.
             ("ABN {v} on invoice.", "98 123 456 782", "abn"),
             ("Company ACN {v} registered.", "123 456 781", "acn"),
@@ -321,6 +321,15 @@ class TestExtractPii:
         assert kept.confidence < 0.45
         sweep = safety_sweep(text, [], lang="en", locale="en_AU")
         assert _au_findings(sweep) == []
+        # The sweep must emit the value itself (it is also the Pipeline's
+        # deterministic stage), not merely avoid tagging it.
+        covering = [e for e in sweep if e.start < end and e.end > start]
+        assert len(covering) == 1, [(e.text, e.label) for e in covering]
+        swept = covering[0]
+        assert (swept.start, swept.end, swept.label) == (start, end, label)
+        assert swept.metadata.get("subtype") is None
+        assert swept.metadata["safety_sweep"]["validated"] is False
+        assert swept.confidence < 0.45
 
     @pytest.mark.parametrize(
         "text",
@@ -493,6 +502,15 @@ class TestSafetySweep:
         text = f"ABN {SELFTEST_ABN}, IHI {VALID_IHI}, Medicare {SELFTEST_MEDICARE}."
         for entity in safety_sweep(text, [], lang="en"):
             assert "subtype" not in entity.metadata
+            # Validated or non-AU evidence is unchanged: no ``validated`` key.
+            assert "validated" not in entity.metadata["safety_sweep"]
+
+    def test_valid_au_sweep_evidence_has_no_validated_key(self):
+        text = f"Medicare number {SELFTEST_MEDICARE} on card."
+        entities = safety_sweep(text, [], lang="en", locale="en_AU")
+        assert _au_findings(entities)
+        for entity in entities:
+            assert "validated" not in entity.metadata["safety_sweep"]
 
 
 # ---------------------------------------------------------------------------
@@ -540,7 +558,7 @@ def test_merge_carries_subtype_for_pattern_only_and_agreeing_model_spans():
     [
         ("Medicare number 2123 45671 1 on card.", "2123 45671 1"),
         ("TFN 123 456 783.", "123 456 783"),
-        ("Practice ABN: 51 824 753 557 on invoice.", "51 824 753 557"),
+        ("Practice ABN: 11 345 678 918 on invoice.", "11 345 678 918"),
         ("Company ACN 123 456 781 registered.", "123 456 781"),
         (f"Patient IHI {_flip_last(VALID_IHI)} confirmed.", _flip_last(VALID_IHI)),
     ],
@@ -608,3 +626,59 @@ def test_au_patterns_never_include_field_labels():
         assert not re.search(r"[A-Za-z]{2,}", pattern.pattern.replace(r"\b", "")), (
             pattern.pattern
         )
+
+
+# ---------------------------------------------------------------------------
+# Pipeline: labelled checksum-invalid values must still be redacted
+# ---------------------------------------------------------------------------
+
+_LABELLED_INVALID = [
+    ("MEDICARE_NUMBER", "Medicare number 2123 45671 1 on card.", "2123 45671 1"),
+    ("TFN", "TFN 123 456 783.", "123 456 783"),
+    ("ABN", "Practice ABN: 11 345 678 918 on invoice.", "11 345 678 918"),
+    ("ACN", "Company ACN 123 456 781 registered.", "123 456 781"),
+    ("IHI", f"Patient IHI {_flip_last(VALID_IHI)} confirmed.", _flip_last(VALID_IHI)),
+]
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        "ccia_l1",
+        "ccia_l2",
+        "ccia_l3",
+        "australia_privacy_act",
+        "hipaa_safe_harbor",
+        "strict_no_leak",
+    ],
+)
+@pytest.mark.parametrize(("label", "text", "value"), _LABELLED_INVALID)
+def test_pipeline_redacts_labelled_invalid_au_values(policy, label, text, value):
+    from openmed.core.pipeline import Pipeline
+
+    result = Pipeline(policy=policy, model_detector=_stub_detector).run(
+        text, locale="en_AU"
+    )
+    start = text.index(value)
+    covering = [
+        span
+        for span in result.spans
+        if span.start < start + len(value) and span.end > start
+    ]
+    assert covering, [(s.start, s.end, s.canonical_label) for s in result.spans]
+    assert covering[0].canonical_label == label
+    assert "subtype" not in (covering[0].metadata or {})
+    assert value not in result.redacted_text
+
+
+@pytest.mark.usefixtures("no_model")
+@pytest.mark.parametrize("policy", ["ccia_l1", "ccia_l3"])
+@pytest.mark.parametrize(("label", "text", "value"), _LABELLED_INVALID)
+def test_pipeline_default_detector_path_redacts_labelled_invalid_au_values(
+    policy, label, text, value
+):
+    # extract_pii path (real-model shape): the span must survive the keep floor.
+    from openmed.core.pipeline import Pipeline
+
+    result = Pipeline(policy=policy, model_name="fixture-pii-model").run(text)
+    assert value not in result.redacted_text

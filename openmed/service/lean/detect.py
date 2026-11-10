@@ -8,6 +8,7 @@ the canonical label, an optional subtype, the score and the policy class from
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
@@ -29,6 +30,12 @@ __all__ = ["detect_segments", "get_shared_loader"]
 
 _LOADER: Any = None
 _LOADER_LOCK = threading.Lock()
+# The shared loader's model pipelines and fast tokenizers are not safe to call
+# from several threads at once, and sync endpoints run on the FastAPI
+# threadpool. Default-path inference is therefore serialised per process;
+# throughput scales with ``uvicorn --workers``. An injected detector is the
+# caller's responsibility and is not serialised.
+_INFER_LOCK = threading.Lock()
 
 
 def _make_loader() -> Any:
@@ -124,7 +131,8 @@ def detect_segments(
         model_detector: Optional replacement for the PII model stage (tests and
             alternative backends). ``None`` uses the configured model
             (``OPENMED_LEAN_MODEL`` or the openmed default) through the shared
-            process-wide loader.
+            process-wide loader. Inference on that default path is serialised
+            per process by a module lock; an injected detector is not.
 
     Returns:
         Finding mappings in segment order, then by offset. No span text.
@@ -146,15 +154,16 @@ def detect_segments(
             use_safety_sweep=True,
         )
         findings: list[dict[str, Any]] = []
-        for segment in request.segments:
-            findings.extend(
-                _segment_findings(
-                    pipeline,
-                    segment.segment_id,
-                    segment.text,
-                    preserve_whitespace=request.preserve_whitespace,
+        with _INFER_LOCK if model_detector is None else contextlib.nullcontext():
+            for segment in request.segments:
+                findings.extend(
+                    _segment_findings(
+                        pipeline,
+                        segment.segment_id,
+                        segment.text,
+                        preserve_whitespace=request.preserve_whitespace,
+                    )
                 )
-            )
     except Exception as exc:
         logger.warning(
             "detect failed policy=%s type=%s", policy.name, type(exc).__name__

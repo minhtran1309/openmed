@@ -2,7 +2,7 @@
 
 Every identifier here is synthetic. Checksum-valid values are the published
 self-test values or are computed in ``tests/unit/core/test_au_identifiers.py``
-(``2123 45670 1`` Medicare, ``51 824 753 556`` ABN, ``8003601234567894`` IHI,
+(``2123 45670 1`` Medicare, ``11 345 678 919`` ABN, ``8003601234567894`` IHI,
 ``123 456 782`` TFN, ``123 456 780`` ACN); phone, street and suburb values are
 fictional. The model is always stubbed: no network and no model download.
 """
@@ -22,7 +22,7 @@ from openmed.service.lean.app import create_app, get_model_detector
 from openmed.service.lean.schemas import schema_names
 
 MEDICARE = "2123 45670 1"
-ABN = "51 824 753 556"
+ABN = "11 345 678 919"
 IHI = "8003601234567894"
 TFN = "123 456 782"
 ACN = "123 456 780"
@@ -401,6 +401,98 @@ def test_model_loader_is_shared_across_segments_and_requests(monkeypatch) -> Non
     assert len(created) == 1
     assert len(seen_loaders) >= 3
     assert all(loader is created[0] for loader in seen_loaders)
+
+
+def test_labelled_invalid_medicare_is_found_without_subtype(client) -> None:
+    """A labelled checksum failure (typo/OCR) is still a finding, untyped."""
+    invalid = "2123 45671 1"  # MEDICARE with the last check digit flipped.
+    text = f"Medicare number {invalid} on card."
+    response = _detect(client, [_seg("s", text)], policy="ccia_l3")
+
+    assert response.status_code == 200
+    findings = response.json()["findings"]
+    covering = [
+        f
+        for f in findings
+        if f["start"] < text.index(invalid) + len(invalid)
+        and f["end"] > text.index(invalid)
+    ]
+    assert len(covering) == 1, findings
+    finding = covering[0]
+    assert finding["label"] == "MEDICARE_NUMBER"
+    assert "subtype" not in finding
+    assert finding["policy_class"] == "DIRECT_IDENTIFIER"
+    assert text[finding["start"] : finding["end"]] == invalid
+
+
+def test_detect_inference_is_serialised_on_the_default_path(monkeypatch) -> None:
+    """Concurrent requests never enter the shared model stage at once."""
+    import threading
+
+    import openmed
+
+    guard = threading.Lock()
+    state = {"active": 0, "max_active": 0, "calls": 0}
+    other_entered = threading.Event()
+
+    def fake_analyze_text(inference_text, **kwargs):
+        with guard:
+            state["calls"] += 1
+            first = state["calls"] == 1
+            state["active"] += 1
+            state["max_active"] = max(state["max_active"], state["active"])
+            if not first:
+                other_entered.set()
+        try:
+            if first:
+                # Hold the model stage until another call enters it. With the
+                # inference lock no other call can, and the wait times out.
+                other_entered.wait(timeout=1.0)
+        finally:
+            with guard:
+                state["active"] -= 1
+        return PredictionResult(
+            text=inference_text,
+            entities=[],
+            model_name=kwargs["model_name"],
+            timestamp="2026-01-01T00:00:00",
+        )
+
+    monkeypatch.setattr(openmed, "analyze_text", fake_analyze_text)
+    monkeypatch.setattr(detect_module, "_LOADER", None)
+    monkeypatch.setattr(detect_module, "_make_loader", object)
+    start = threading.Barrier(2)
+    statuses: list[int] = []
+
+    def worker(segment_id: str) -> None:
+        client = TestClient(create_app(), raise_server_exceptions=False)
+        start.wait()
+        response = _detect(client, [_seg(segment_id, f"Mobile: {PHONE}")])
+        statuses.append(response.status_code)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert statuses == [200, 200]
+    assert state["calls"] >= 2
+    assert state["max_active"] == 1
+
+
+def test_loader_build_failure_maps_to_detect_failed(monkeypatch) -> None:
+    def broken_loader():
+        raise RuntimeError(f"cannot load model for {SYNTHETIC_NAME}")
+
+    monkeypatch.setattr(detect_module, "_LOADER", None)
+    monkeypatch.setattr(detect_module, "_make_loader", broken_loader)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    response = _detect(client, [_seg("s", f"Patient {SYNTHETIC_NAME}")])
+
+    assert response.status_code == 500
+    assert response.json() == {"error_code": "DETECT_FAILED"}
+    assert SYNTHETIC_NAME not in response.text
 
 
 def test_injected_detector_does_not_create_a_loader(client, monkeypatch) -> None:

@@ -293,8 +293,8 @@ class TestPhones:
         [
             ("Medicare number 2123 45670 1 on card.", "2123 45670 1", "AU_MEDICARE"),
             ("Medicare number 2123456701 on card.", "2123456701", "AU_MEDICARE"),
-            ("Practice ABN: 51 824 753 556.", "51 824 753 556", "AU_ABN"),
-            ("Practice ABN: 51824753556.", "51824753556", "AU_ABN"),
+            ("Practice ABN: 11 345 678 919.", "11 345 678 919", "AU_ABN"),
+            ("Practice ABN: 11345678919.", "11345678919", "AU_ABN"),
             ("Tax file number 123 456 782 lodged.", "123 456 782", "AU_TFN"),
         ],
     )

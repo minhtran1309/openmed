@@ -24,7 +24,7 @@ from openmed.service.lean.app import create_app, get_model_detector
 from openmed.service.lean.schemas import schema_names
 
 PROBE = (
-    "Patient Jane Citizen, Medicare 2123 45670 1, ABN 51 824 753 556, "
+    "Patient Jane Citizen, Medicare 2123 45670 1, ABN 11 345 678 919, "
     "ph 0412 345 678, seen 04/07/2023, diagnosed 2019."
 )
 CHECKS = ("medicare", "abn", "phone", "date_shift", "person_tag", "year_tag")
@@ -32,7 +32,7 @@ PROBE_VALUES = (
     "Jane",
     "Citizen",
     "2123 45670 1",
-    "51 824 753 556",
+    "11 345 678 919",
     "0412 345 678",
     "04/07/2023",
     "2019",
@@ -328,7 +328,7 @@ def test_evaluate_checks_all_pass() -> None:
         (
             "abn",
             _good_findings(),
-            "Patient [PERSON_1], 51 824 753 556 seen 14/07/2023, diagnosed [DATE_1].",
+            "Patient [PERSON_1], 11 345 678 919 seen 14/07/2023, diagnosed [DATE_1].",
         ),
         (
             "phone",

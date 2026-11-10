@@ -39,7 +39,7 @@ __all__ = [
 
 # Synthetic and checksum-valid; identical to the consumer's ``SELFTEST_TEXT``.
 SELFTEST_TEXT = (
-    "Patient Jane Citizen, Medicare 2123 45670 1, ABN 51 824 753 556, "
+    "Patient Jane Citizen, Medicare 2123 45670 1, ABN 11 345 678 919, "
     "ph 0412 345 678, seen 04/07/2023, diagnosed 2019."
 )
 SELFTEST_OFFSET_DAYS = 10
@@ -49,7 +49,7 @@ _APPLY_POLICY = "ccia_l1"
 _FULL_DATE = "04/07/2023"
 _YEAR = "2019"
 _MEDICARE = "2123 45670 1"
-_ABN = "51 824 753 556"
+_ABN = "11 345 678 919"
 _PHONE = "0412 345 678"
 
 CHECK_NAMES: tuple[str, ...] = (

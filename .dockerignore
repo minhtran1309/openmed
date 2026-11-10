@@ -18,7 +18,7 @@ __pycache__/
 .coverage
 coverage.xml
 
-dist/
+dist/*
 !dist/*.whl
 build/
 site/
@@ -33,3 +33,8 @@ vulnerability-reports/
 
 tests/
 tmp/
+
+# Local-only planning material; never part of the build context.
+openmed-fork-integration/
+.superpowers/
+API_USAGE.md

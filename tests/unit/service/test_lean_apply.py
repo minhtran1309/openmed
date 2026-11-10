@@ -114,13 +114,13 @@ def test_apply_marks_au_canonical_labels_and_keeps_id_num_and_ssn(
     # synthetic SSN-shaped value; apply never detects, so labels are given.
     text = (
         "Medicare 2123 45670 1, TFN 123 456 782, IHI 8003601234567894, "
-        "ABN 51 824 753 556, ACN 123 456 780, ID 445566, SSN 078-05-1120."
+        "ABN 11 345 678 919, ACN 123 456 780, ID 445566, SSN 078-05-1120."
     )
     spans = [
         _span("m", text, "2123 45670 1", "MEDICARE_NUMBER", subtype="AU_MEDICARE"),
         _span("t", text, "123 456 782", "TFN", subtype="AU_TFN"),
         _span("i", text, "8003601234567894", "IHI", subtype="AU_IHI"),
-        _span("a", text, "51 824 753 556", "ABN", subtype="AU_ABN"),
+        _span("a", text, "11 345 678 919", "ABN", subtype="AU_ABN"),
         _span("c", text, "123 456 780", "ACN", subtype="AU_ACN"),
         _span("g", text, "445566", "ID_NUM"),
         _span("s", text, "078-05-1120", "SSN"),

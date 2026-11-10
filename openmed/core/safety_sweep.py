@@ -73,6 +73,9 @@ class _Candidate:
     confidence: float
     priority: int
     pattern: PIIPattern
+    # False for a labelled value whose validator failed: it is kept so the
+    # value is still redacted, but it never claims the pattern's subtype.
+    validated: bool = True
 
 
 def _span_value(span: Any, key: str) -> Any:
@@ -154,12 +157,18 @@ def _candidate_metadata(candidate: _Candidate) -> dict[str, Any]:
     }
     if id_subtype is not None:
         safety_sweep_metadata["id_subtype"] = id_subtype
+    if not candidate.validated:
+        # Only an unvalidated labelled failure is marked, so evidence for
+        # every other sweep hit is unchanged.
+        safety_sweep_metadata["validated"] = False
     # A value-free calendar code lets shifting and surrogate stages select a
     # non-Gregorian calendar without re-reading the matched date.
     calendar = getattr(candidate.pattern, "calendar", None)
     if calendar is not None:
         safety_sweep_metadata["calendar"] = calendar
-    subtype = getattr(candidate.pattern, "subtype", None)
+    subtype = (
+        getattr(candidate.pattern, "subtype", None) if candidate.validated else None
+    )
     return {
         "source": SAFETY_SWEEP_SOURCE,
         "patterns_version": SAFETY_SWEEP_PATTERNS_VERSION,
@@ -184,6 +193,24 @@ def _collect_candidates(text: str, patterns: Sequence[PIIPattern]) -> list[_Cand
                     normalizer=pattern.context_normalizer,
                 ):
                     labelled_rejections.append((start, end, pattern.priority))
+                    if getattr(pattern, "reject_unlabelled_validation_failure", False):
+                        # A labelled checksum failure is likely a typo or OCR
+                        # error of a real identifier. Keep it at a reduced
+                        # score, unvalidated and subtype-free, so it is still
+                        # redacted. Its own priority equals the rejection's,
+                        # so the labelled-rejection filter below keeps it.
+                        candidates.append(
+                            _Candidate(
+                                start=start,
+                                end=end,
+                                label=pattern.entity_type,
+                                text=matched_text,
+                                confidence=_confidence(text, start, end, pattern) * 0.3,
+                                priority=pattern.priority,
+                                pattern=pattern,
+                                validated=False,
+                            )
+                        )
                 continue
             if pattern.requires_context and not _has_context(
                 text,
