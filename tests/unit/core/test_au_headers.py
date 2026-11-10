@@ -178,6 +178,18 @@ def test_header_fixture_values_through_pipeline():
         assert surface not in result.redacted_text
 
 
+@pytest.mark.parametrize(
+    "label",
+    ["Agent Name", "Health Care Agent Name", "Insurance Agent Name", "AGENT NAME"],
+)
+def test_agent_name_alone_is_still_a_person_field(label):
+    """Only a drug-type agent (``Contrast Agent Name``) is a non-person noun."""
+    text = f"{label}: Jane Citizen\n"
+    result = _pipeline(text)
+    assert ("Jane Citizen", "PERSON") in _found(result, text)
+    assert "Jane Citizen" not in result.redacted_text
+
+
 def test_header_dob_stays_date_of_birth_under_mark():
     text = "D.O.B: 04/07/1961\nDOB 12-Mar-58\n"
     result = _pipeline(text)
@@ -302,7 +314,11 @@ def test_values_stop_at_line_end_or_next_label(text, expected):
         "Modality Name: CT",
         "Equipment Name: Philips Ingenia",
         "Machine Name: Scanner Two",
-        "Agent Name: Gadovist",
+        "Contrast Agent Name: Gadovist",
+        "CONTRAST AGENT NAME: GADOVIST",
+        "Imaging Agent Name: Omnipaque",
+        "Stress Agent Name: Regadenoson",
+        "Radiopharmaceutical Agent Name: Technetium Sestamibi",
         "Tracer Name: Fluciclovine",
         "Radiopharmaceutical Name: Technetium Sestamibi",
         "Isotope Name: Gallium",

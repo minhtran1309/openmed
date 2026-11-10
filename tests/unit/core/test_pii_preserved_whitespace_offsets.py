@@ -104,3 +104,29 @@ def test_pipeline_run_model_spans_slice_source(text, preserve_whitespace) -> Non
     assert sliced == {FIRST, LAST}
     assert FIRST not in result.redacted_text
     assert LAST not in result.redacted_text
+
+
+def test_mismatched_model_text_fails_closed(monkeypatch) -> None:
+    """Offsets for some other text are refused, not passed through."""
+    import openmed
+    from openmed.core.errors import InferenceError
+    from openmed.processing.outputs import EntityPrediction, PredictionResult
+
+    def other_text_analyzer(inference_text, **_kwargs):
+        return PredictionResult(
+            text="Patient Jane Citizen",
+            entities=[
+                EntityPrediction(
+                    text=FIRST, label="first_name", confidence=0.99, start=8, end=12
+                )
+            ],
+            model_name="stub",
+            timestamp="2026-01-01T00:00:00",
+        )
+
+    monkeypatch.setattr(openmed, "analyze_text", other_text_analyzer)
+    text = "  Patient Jane Citizen was seen."
+    with pytest.raises(InferenceError) as excinfo:
+        pii.extract_pii(text, preserve_whitespace=True, loader=_NameFindingLoader())
+    assert FIRST not in str(excinfo.value)
+    assert LAST not in str(excinfo.value)

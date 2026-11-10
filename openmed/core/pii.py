@@ -712,15 +712,27 @@ def _rebase_onto_inference_text(result: Any, inference_text: str) -> Any:
     keeps its leading whitespace, and every later step (smart merging and the
     normalization remap) indexes ``inference_text``. Shift the offsets by the
     stripped leading run so both agree.
+
+    Raises:
+        InferenceError: ``inference_text`` starts with whitespace (so the
+            offsets need a shift) but the result's text is not its stripped
+            form, so the right shift is unknown. Passing the offsets through
+            would mis-place spans and leak identifiers. The message carries
+            no text. Without a leading run no shift is at stake and the result
+            is returned unchanged, as before.
     """
     model_text = getattr(result, "text", None)
     if not isinstance(model_text, str) or model_text == inference_text:
         return result
     leading = len(inference_text) - len(inference_text.lstrip())
-    if not leading or (
-        inference_text[leading : leading + len(model_text)] != model_text
-    ):
+    if not leading:
         return result
+    if model_text != inference_text.strip():
+        raise InferenceError(
+            "PII inference returned offsets for text that does not match the "
+            "submitted text. Retry with a compatible model or analyzer; if it "
+            "persists, report the model identifier."
+        )
 
     entities = [
         replace(
