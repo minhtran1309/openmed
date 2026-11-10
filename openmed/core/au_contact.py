@@ -33,6 +33,9 @@ Design rules:
 * Spans are values only. The labelled local-number pattern keeps its field
   label outside a named ``value`` group.
 * Phone matches never start or end inside a longer separated digit run.
+  In a ``Pipeline`` run a column gap (a tab or two or more spaces in the
+  source) is not a separator, so a phone in a table cell is still found when
+  the next or previous cell starts with a digit (a provider number).
 * Street names, street types and state abbreviations are case-sensitive, so
   ``CT chest``, ``Dr Jones``, ``by the way`` and ``SA node`` are not matched;
   ``Dr`` and ``Ct`` only count after a house number and a capitalised street
@@ -50,6 +53,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 
+from .au_records import pipeline_layout_view
 from .pii_entity_merger import PIIPattern
 
 AU_PHONE = "AU_PHONE"
@@ -293,6 +297,26 @@ AU_CONTACT_PII_PATTERNS: List[PIIPattern] = [
         context_words=list(_PHONE_CONTEXT),
         validator=validate_australian_phone,
         reject_on_validation_failure=True,
+        subtype=AU_PHONE,
+    ),
+    # The same shapes in a table row. The ``Pipeline`` collapses the column
+    # gap between cells to one space, so a phone whose next cell starts with
+    # a digit (``(02) 5550 1234        123456AB``) reads as part of a longer
+    # digit run above. This copy matches the run's source layout instead,
+    # where the gap reads as a tab and so ends the number; a single space
+    # still joins digits into one longer run. Outside a ``Pipeline`` run it
+    # matches nothing.
+    PIIPattern(
+        rf"{_PHONE_START}(?:{_INTERNATIONAL}|{_MOBILE}|{_GEOGRAPHIC}){_PHONE_END}",
+        "phone_number",
+        priority=15,
+        flags=0,
+        base_score=0.6,
+        context_boost=0.35,
+        context_words=list(_PHONE_CONTEXT),
+        validator=validate_australian_phone,
+        reject_on_validation_failure=True,
+        match_normalizer=pipeline_layout_view,
         subtype=AU_PHONE,
     ),
     # Bare eight-digit local number, only directly after a phone/fax label.

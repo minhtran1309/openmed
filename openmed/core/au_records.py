@@ -30,6 +30,9 @@ Design rules:
   are case-insensitive. ``Hospital``, ``Lab`` and ``Specimen`` take ``No``,
   ``No.`` or ``Number``; ``Accession`` and ``Patient ID`` take one
   optionally (``Accession No: 12345678``, ``Patient ID Number 12345``).
+  A research ``Participant`` takes ``ID``, ``No`` or ``Number``, and a
+  ``Subject`` takes ``ID``. ``Trial ID`` and ``Study ID`` are not labels:
+  they usually hold a public registry or protocol number.
   ``UR No`` wins over ``UR``. A label never starts or ends inside a longer
   word (``your``, ``Urgent``).
 * ``Episode`` and ``Visit`` count only before an explicit ``:``, ``#``,
@@ -38,8 +41,17 @@ Design rules:
 * The separator is optional spaces with at most one ``:`` or ``#``. A bare
   ``.`` is never a separator (it only appears inside ``No.`` and ``U.R.``),
   so a label cannot reach across a sentence end.
-* Values are case-sensitive: up to three capital letters, then digits, with
-  optional hyphens or ``NNN NNN NNN`` / ``NNN NNN NNNN`` style spacing.
+* Values are case-sensitive: up to three capital letters (optionally
+  followed by a hyphen), then digits, with optional hyphens or ``NNN NNN
+  NNN`` / ``NNN NNN NNNN`` style spacing, then an optional ``-`` and check
+  letter (``MRN: 1234567-K``).
+* An EMR running title line (``CITIZEN, Jane Ann - 12345678-K``) has no
+  field label: the all-caps surname, the comma, the title-case or all-caps
+  given names and the spaced dash act as the label. The value is six to ten
+  digits with an optional check letter; a bare ten-digit AU mobile or
+  geographic number is a phone, not a record. The line is matched against
+  the source layout, so the given names never span a line break, though a
+  column gap may follow the comma or surround the dash.
 * Priority 13 and base score 0.9 put a labelled value above the unlabelled
   TFN and ACN checksum patterns, so ``Accession 123 456 782`` is ``AU_UR``.
 
@@ -70,8 +82,10 @@ Design rules:
   drug: aspirin`` never matches. A birth-date label also takes a single
   space, because its value must be a date. ``GP``, ``NOK`` and ``DOB`` are
   case-sensitive; the other labels are case-insensitive, except a bare
-  ``Name``, which counts only as ``Name`` or ``NAME`` and never after a
-  non-person noun (``brand name:``, ``Drug Name:``, ``Test Name:`` ...).
+  ``Name``, which counts only as ``Name`` or ``NAME`` and never directly
+  after a non-person noun and one space (``brand name:``, ``Drug Name:``,
+  ``Test Name:`` ...). A noun followed by a column gap (a tab or two or more
+  spaces in the source) ends the previous cell and does not block it.
 * The ``Pipeline`` collapses tabs, line breaks and repeated spaces to one
   space before detection. :func:`bind_source_layout` lets these patterns see
   the source layout again for the text of one run: a collapsed line break
@@ -96,6 +110,27 @@ Design rules:
   street, state, postcode and generic date patterns on the same text, so a
   header address is one span and a header birth date stays
   ``DATE_OF_BIRTH``.
+
+Print footer user ids (``AU_PRINT_FOOTER``)
+-------------------------------------------
+
+An EMR print footer names the user who printed the record and their login:
+``Printed by CITIZEN, JANE [CITIZENJ] at 01/02/2026 3:04:05 PM``. The
+bracketed login after ``Printed by`` and a name is ``username``
+(``USERNAME``). A bracketed value anywhere else (``Final [99]``, a citation
+``[12]``) is not.
+
+Labelled values repeated without their label
+--------------------------------------------
+
+:func:`propagate_labelled_values` runs in the ``Pipeline`` deterministic
+stage for the AU locale. Once a birth date is detected after its ``DOB``
+label (``AU_HEADER``) or a record number after its label (``AU_UR``), every
+other exact, token-bounded copy of the same text in the run is that value
+too: a running header ``Jane CITIZEN 04/07/1961`` becomes
+``DATE_OF_BIRTH`` rather than ``DATE``, and a table cell under an ``MRN``
+heading becomes ``ID_NUM``. A value that is never labelled in the run is
+not propagated, so an unlabelled header date stays ``DATE``.
 """
 
 from __future__ import annotations
@@ -136,6 +171,9 @@ AU_RECORD_CONTEXT_WORDS: tuple[str, ...] = (
     "Accession",
     "Lab No",
     "Specimen No",
+    "Participant ID",
+    "Participant No",
+    "Subject ID",
 )
 
 
@@ -151,6 +189,8 @@ _FIELD_LABELS = (
     rf"|Patient[ \t]+ID(?:[ \t]+{_NUMBER_WORD})?"
     rf"|Lab[ \t]+{_NUMBER_WORD}"
     rf"|Specimen[ \t]+{_NUMBER_WORD}"
+    rf"|Participant[ \t]+(?:ID|{_NUMBER_WORD})"
+    rf"|Subject[ \t]+ID"
     rf"|Accession(?:[ \t]+{_NUMBER_WORD})?)"
 )
 # ``Episode`` and ``Visit`` are common prose words, so they count only before
@@ -165,7 +205,7 @@ _SEPARATOR = r"[ \t]*[:#]?[ \t]*"
 _VALUE = (
     r"(?:\d{3} \d{3} \d{4}(?![ ]?\d)"
     r"|\d{3}(?: \d{3}){1,3}(?![ ]?\d)"
-    r"|[A-Z]{0,3}\d[\d-]{3,11}\d"
+    r"|(?:[A-Z]{1,3}-?)?\d[\d-]{3,11}\d(?:-[A-Z])?"
     r"|\d{4,12})"
     r"(?![A-Za-z0-9])"
 )
@@ -278,6 +318,31 @@ def _restore_source_layout(text: str) -> _SameLengthText:
         text is not layout.normalized_text and text != layout.normalized_text
     ):
         return _SameLengthText(text)
+    return _SameLengthText(layout.layout_text())
+
+
+def pipeline_layout_view(text: str) -> _SameLengthText:
+    """Return the bound source layout of ``text``, or text nothing matches.
+
+    A ``match_normalizer`` for patterns that only make sense on the source
+    layout of one ``Pipeline`` run (see :func:`bind_source_layout`). Inside
+    the run, the text reads as the layout copy (``\n`` for a collapsed line
+    break, ``\t`` for a collapsed tab or column gap). For any other text, or
+    outside a run, it reads as NUL characters of the same length, so the
+    pattern finds nothing and ``extract_pii`` and the stand-alone safety
+    sweep behave exactly as without it.
+
+    Args:
+        text: The text a pattern is about to be matched against.
+
+    Returns:
+        A same-length view whose spans need no remapping.
+    """
+    layout = _SOURCE_LAYOUT.get()
+    if layout is None or (
+        text is not layout.normalized_text and text != layout.normalized_text
+    ):
+        return _SameLengthText("\0" * len(text))
     return _SameLengthText(layout.layout_text())
 
 
@@ -438,8 +503,12 @@ _NOT_PERSON_NAME_NOUNS = (
     "analyzer",
     "station",
 )
-# Python look-behinds are fixed width, so there is one per noun.
-_NOT_AFTER_NOUN = "".join(rf"(?<!(?i:{noun})[ \t])" for noun in _NOT_PERSON_NAME_NOUNS)
+# Python look-behinds are fixed width, so there is one per noun. The noun
+# blocks only when it is part of the same label: one space before ``Name``.
+# Header patterns match the source layout, where a column gap reads ``\t``,
+# so in ``MEDICAL IMAGING REPORT      NAME:  CITIZEN, JANE`` the noun is the
+# previous cell's last word and the label is a bare ``NAME:``.
+_NOT_AFTER_NOUN = "".join(rf"(?<!(?i:{noun})[ ])" for noun in _NOT_PERSON_NAME_NOUNS)
 _PATIENT_NAME_CORE = rf"(?i:Patient{_GAP}Name|Next{_GAP}of{_GAP}Kin)|NOK"
 _PATIENT_NAME_LABELS = rf"{_PATIENT_NAME_CORE}|{_NOT_AFTER_NOUN}(?:Name|NAME)"
 _CLINICIAN_NAME_LABELS = (
@@ -607,3 +676,205 @@ def au_header_role(pattern: PIIPattern) -> str:
         fields and the next of kin).
     """
     return "clinician" if pattern is _CLINICIAN_NAME_PATTERN else "patient"
+
+
+# ---------------------------------------------------------------------------
+# EMR running title line: ``SURNAME, Given Middle - <MRN>-<check letter>``
+# ---------------------------------------------------------------------------
+
+# An EMR result print repeats the patient on a title line as an all-caps
+# surname, a comma, title-case given names, a spaced dash and the record
+# number, often with a check letter (``CITIZEN, Jane Ann - 12345678-K``). The
+# name is the label: without it a dashed number is never a record number.
+_TITLE_SURNAME = r"[A-Z][A-Z'’-]*[A-Z]"
+# Title-case (``Jane``) or all-caps (``JANE``) given names.
+_TITLE_GIVEN = r"(?:[A-Z][a-z]+(?:['’-][A-Z]?[a-z]+)*|[A-Z][A-Z'’-]*[A-Z])"
+# A bare ten-digit AU mobile or geographic number is a phone, not a record.
+_TITLE_NOT_PHONE = r"(?!0[23478]\d{8}(?![\d-]))"
+_TITLE_MRN = rf"{_TITLE_NOT_PHONE}\d{{6,10}}(?:-[A-Z])?"
+
+AU_RECORD_PII_PATTERNS.append(
+    PIIPattern(
+        rf"(?<![A-Za-z0-9'’-]){_TITLE_SURNAME}(?:[ ]{_TITLE_SURNAME})?,"
+        rf"[ \t]+{_TITLE_GIVEN}(?:[ ]{_TITLE_GIVEN}){{0,3}}[ \t]+[-–][ \t]+"
+        rf"(?P<value>{_TITLE_MRN})(?![A-Za-z0-9])(?![-/.][A-Za-z0-9])",
+        "medical_record_number",
+        priority=13,
+        flags=0,
+        base_score=0.9,
+        context_boost=0.1,
+        context_words=[word.casefold() for word in AU_RECORD_CONTEXT_WORDS],
+        requires_context=False,
+        match_normalizer=_restore_source_layout,
+        subtype=AU_UR,
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# Print footer user id: ``Printed by <NAME> [<USERID>]``
+# ---------------------------------------------------------------------------
+
+AU_PRINT_FOOTER = "AU_PRINT_FOOTER"
+
+# A print footer names the user who printed the record, then that user's
+# login in square brackets (``Printed by CITIZEN, JANE [CITIZENJ] at ...``).
+# Only the bracketed login is a value here; the name is left to the model.
+_FOOTER_NAME_WORD = r"[A-Z][A-Za-z'’-]*"
+_FOOTER_NAME = rf"{_FOOTER_NAME_WORD}(?:,?[ ]{_FOOTER_NAME_WORD}){{0,4}}"
+_FOOTER_USER_ID = r"[A-Za-z][A-Za-z0-9._-]{1,31}"
+
+#: ``Printed by <NAME> [<USERID>]`` print footer user ids (raw label
+#: ``username``, canonical ``USERNAME``).
+AU_PRINT_FOOTER_PII_PATTERNS: List[PIIPattern] = [
+    PIIPattern(
+        rf"(?<![A-Za-z])(?i:Printed)[ ](?i:by):?[ ]{_FOOTER_NAME}[ ]?"
+        rf"\[(?P<value>{_FOOTER_USER_ID})\]",
+        "username",
+        priority=14,
+        flags=0,
+        base_score=0.95,
+        context_boost=0.05,
+        context_words=["printed by"],
+        requires_context=False,
+        match_normalizer=_restore_source_layout,
+        subtype=AU_PRINT_FOOTER,
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Labelled values repeated without their label
+# ---------------------------------------------------------------------------
+
+# Raw label -> the subtype that marks it as a labelled AU value.
+_PROPAGATED_SUBTYPES: Mapping[str, str] = MappingProxyType(
+    {"date_of_birth": AU_HEADER, "medical_record_number": AU_UR}
+)
+# Raw label -> the raw label an exact same-span finding may be relabelled from.
+_RELABELLED_FROM: Mapping[str, frozenset[str]] = MappingProxyType(
+    {"date_of_birth": frozenset({"date"}), "medical_record_number": frozenset()}
+)
+#: A record number shorter than this many letters and digits is not copied:
+#: four or five digits can be a year, a postcode, a time or a count.
+MIN_PROPAGATED_RECORD_LENGTH = 6
+
+
+def _occurrences(view: str, surface: str) -> Iterator[tuple[int, int]]:
+    # Never inside a longer word, number, date or code. An all-digit value
+    # also never continues across one space into more digits.
+    guard = r"(?<!\d[ ])" if surface.isdigit() else ""
+    tail = r"(?![ ]\d)" if surface.isdigit() else ""
+    pattern = re.compile(
+        rf"(?<![A-Za-z0-9])(?<![A-Za-z0-9][-/.]){guard}"
+        rf"{re.escape(surface)}"
+        rf"(?![A-Za-z0-9])(?![-/.][A-Za-z0-9]){tail}"
+    )
+    for match in pattern.finditer(view):
+        yield match.span()
+
+
+def propagate_labelled_values(
+    text: str,
+    entities: Sequence[object],
+    patterns: Sequence[PIIPattern],
+) -> Sequence[object]:
+    """Carry a labelled birth date or record number to its unlabelled copies.
+
+    A report repeats the patient's values without their labels: a running
+    header shows ``Jane CITIZEN 04/07/1961`` after the ``DOB:`` field, and a
+    table cell under an ``MRN`` column heading repeats the ``MRN# 1234567``
+    in the title. Once a value is detected after its own label
+    (``AU_HEADER`` birth date or ``AU_UR`` record number), every other exact,
+    token-bounded occurrence of the same surface in the document is that
+    value too:
+
+    * an occurrence already detected as a plain ``date`` with exactly the
+      same span becomes ``date_of_birth``;
+    * an occurrence nothing covers is added with the labelled value's label,
+      subtype and confidence;
+    * an occurrence that overlaps any other finding is left alone.
+
+    A record number labelled with a check letter (``UR: 1234567-K``) also
+    covers bare copies of its digit stem (``1234567``). A record number or
+    stem needs at least :data:`MIN_PROPAGATED_RECORD_LENGTH` letters and
+    digits. Nothing changes unless ``patterns`` holds the AU
+    record-number patterns, so other locales are untouched.
+
+    Args:
+        text: The text the entities index.
+        entities: Deterministic findings (``EntityPrediction``-like objects
+            with ``start``, ``end``, ``label``, ``confidence`` and
+            ``metadata``).
+        patterns: The pattern list the findings came from.
+
+    Returns:
+        ``entities`` itself when nothing changes, otherwise a new list sorted
+        by offset. Values are compared in memory only and never logged.
+    """
+    pattern_ids = {id(pattern) for pattern in patterns}
+    if not any(id(pattern) in pattern_ids for pattern in AU_RECORD_PII_PATTERNS):
+        return entities
+
+    anchors: dict[str, object] = {}
+    for entity in entities:
+        label = getattr(entity, "label", None)
+        metadata = getattr(entity, "metadata", None) or {}
+        if label not in _PROPAGATED_SUBTYPES:
+            continue
+        if metadata.get("subtype") != _PROPAGATED_SUBTYPES[label]:
+            continue
+        surface = text[entity.start : entity.end]
+        if label == "medical_record_number" and (
+            sum(char.isalnum() for char in surface) < MIN_PROPAGATED_RECORD_LENGTH
+        ):
+            continue
+        anchors.setdefault(surface, entity)
+        # ``UR: 1234567-K`` also covers a bare ``1234567`` elsewhere.
+        stem = re.fullmatch(r"(.+\d)-[A-Z]", surface)
+        if label == "medical_record_number" and stem is not None:
+            body = stem.group(1)
+            if sum(char.isalnum() for char in body) >= MIN_PROPAGATED_RECORD_LENGTH:
+                anchors.setdefault(body, entity)
+    if not anchors:
+        return entities
+
+    from ..processing.outputs import EntityPrediction
+
+    view = _restore_source_layout(text).text
+    result = list(entities)
+    changed = False
+    for surface, anchor in anchors.items():
+        label = anchor.label
+        for start, end in _occurrences(view, surface):
+            overlapping = [
+                index
+                for index, entity in enumerate(result)
+                if entity.start < end and entity.end > start
+            ]
+            if overlapping and not (
+                len(overlapping) == 1
+                and (result[overlapping[0]].start, result[overlapping[0]].end)
+                == (start, end)
+                and result[overlapping[0]].label in _RELABELLED_FROM[label]
+            ):
+                continue
+            propagated = EntityPrediction(
+                text=text[start:end],
+                label=label,
+                start=start,
+                end=end,
+                confidence=anchor.confidence,
+                metadata={
+                    **dict(anchor.metadata or {}),
+                    "propagated_from_label": True,
+                },
+            )
+            if overlapping:
+                result[overlapping[0]] = propagated
+            else:
+                result.append(propagated)
+            changed = True
+    if not changed:
+        return entities
+    return sorted(result, key=lambda entity: (entity.start, entity.end))

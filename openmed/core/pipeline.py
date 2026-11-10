@@ -24,6 +24,7 @@ from typing import (
 from openmed.compliance.data_use import DataUseAction, DataUsePolicy, DataUseTag
 from openmed.utils.profiling import Timer
 
+from . import au_records
 from .au_records import bind_source_layout, source_layout_scope
 from .budget import RequestBudget, coerce_budget
 from .custom_recognizer import (
@@ -1335,12 +1336,16 @@ class Pipeline:
     ) -> tuple[OpenMedSpan, ...]:
         from .safety_sweep import safety_sweep
 
+        patterns = self._deterministic_patterns(text, context)
         entities = safety_sweep(
             text,
             [],
             lang=context.route.lang,
-            patterns=self._deterministic_patterns(text, context),
+            patterns=patterns,
         )
+        # AU only: a labelled birth date or record number also covers its
+        # unlabelled copies (running headers, table cells).
+        entities = au_records.propagate_labelled_values(text, entities, patterns)
         custom_spans = self._custom_deny_spans(text, context)
         registered_spans = self._registered_detector_spans(
             text,

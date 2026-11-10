@@ -48,7 +48,11 @@ from .au_contact import AU_CONTACT_PII_PATTERNS
 from .au_dates import AU_DATE_PII_PATTERNS
 from .au_identifiers import AU_IDENTIFIER_PII_PATTERNS
 from .au_nrp import AU_NRP_PII_PATTERNS
-from .au_records import AU_HEADER_PII_PATTERNS, AU_RECORD_PII_PATTERNS
+from .au_records import (
+    AU_HEADER_PII_PATTERNS,
+    AU_PRINT_FOOTER_PII_PATTERNS,
+    AU_RECORD_PII_PATTERNS,
+)
 from .lang_id_codemix import (
     TokenLanguageRun,
     TokenLIDHook,
@@ -5880,6 +5884,7 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
     *AU_CONTACT_PII_PATTERNS,
     *AU_RECORD_PII_PATTERNS,
     *AU_HEADER_PII_PATTERNS,
+    *AU_PRINT_FOOTER_PII_PATTERNS,
     *AU_DATE_PII_PATTERNS,
     *AU_NRP_PII_PATTERNS,
     *AU_CLINICIAN_ID_PII_PATTERNS,
