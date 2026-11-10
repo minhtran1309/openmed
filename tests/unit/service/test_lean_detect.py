@@ -181,6 +181,34 @@ def test_detect_ur_number_returns_au_ur(client, text, value) -> None:
     assert not _by_subtype(findings, "AU_TFN")
 
 
+@pytest.mark.parametrize(
+    ("text", "value", "subtype", "label"),
+    [
+        (
+            "AHPRA reg MED0001234567 verified.",
+            "MED0001234567",
+            "AHPRA",
+            "AHPRA_NUMBER",
+        ),
+        ("DVA file no QAB12345 noted.", "QAB12345", "AU_DVA", "DVA_NUMBER"),
+        (
+            "Provider number 2447781L on script.",
+            "2447781L",
+            "AU_PROVIDER",
+            "MEDICARE_PROVIDER_NUMBER",
+        ),
+    ],
+)
+def test_detect_clinician_identifiers(client, text, value, subtype, label) -> None:
+    findings = _detect(client, [_seg("s", text)]).json()["findings"]
+
+    finding = _single(findings, subtype)
+    start = text.index(value)
+    assert (finding["start"], finding["end"]) == (start, start + len(value))
+    assert finding["label"] == label
+    assert finding["policy_class"] == "DIRECT_IDENTIFIER"
+
+
 def test_detect_header_values_with_model_disabled(client) -> None:
     """The injected detector returns nothing; header values still come back."""
     from tests.fixtures.au_report_header import (

@@ -43,6 +43,7 @@ from .anonymizer.providers.clinical_ids import (
     validate_uk_nhs_number,
     validate_uk_nino,
 )
+from .au_clinician_ids import AU_CLINICIAN_ID_PII_PATTERNS
 from .au_contact import AU_CONTACT_PII_PATTERNS
 from .au_dates import AU_DATE_PII_PATTERNS
 from .au_identifiers import AU_IDENTIFIER_PII_PATTERNS
@@ -5881,6 +5882,7 @@ _AU_ENGLISH_PII_PATTERNS: List[PIIPattern] = [
     *AU_HEADER_PII_PATTERNS,
     *AU_DATE_PII_PATTERNS,
     *AU_NRP_PII_PATTERNS,
+    *AU_CLINICIAN_ID_PII_PATTERNS,
 ]
 
 
