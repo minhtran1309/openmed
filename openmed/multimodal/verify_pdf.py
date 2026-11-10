@@ -28,7 +28,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, BinaryIO, Callable
 
 from .documents_pdf import extract_pdf, project_text_spans
 from .exceptions import MissingDependencyError
@@ -41,7 +41,9 @@ _WORD_OVERLAP_FRACTION = 0.5
 # A rectangle counts as a redaction box when it opaquely covers most of the region.
 _BOX_COVER_FRACTION = 0.6
 
-Rasterizer = Callable[[str | Path, int, "tuple[float, float, float, float]"], bytes]
+Rasterizer = Callable[
+    [str | Path | BinaryIO, int, "tuple[float, float, float, float]"], bytes
+]
 
 
 class RedactionFidelityError(RuntimeError):
@@ -258,8 +260,8 @@ class PdfTextRemovalReport:
 
 
 def verify_redacted_pdf(
-    original: str | Path,
-    redacted: str | Path,
+    original: str | Path | BinaryIO,
+    redacted: str | Path | BinaryIO,
     spans: Iterable[Any],
     *,
     rasterizer: Rasterizer | None = None,
@@ -320,8 +322,8 @@ def verify_redacted_pdf(
 
 
 def verify_redacted_text_removed(
-    original: str | Path,
-    redacted: str | Path,
+    original: str | Path | BinaryIO,
+    redacted: str | Path | BinaryIO,
     spans: Iterable[Any],
     *,
     strict: bool = False,
@@ -410,8 +412,8 @@ def verify_redacted_text_removed(
 
 
 def assert_redacted_text_removed(
-    original: str | Path,
-    redacted: str | Path,
+    original: str | Path | BinaryIO,
+    redacted: str | Path | BinaryIO,
     spans: Iterable[Any],
 ) -> PdfTextRemovalReport:
     """Assert that all extractable source words selected by ``spans`` are gone."""
@@ -424,7 +426,7 @@ def assert_redacted_text_removed(
 
 
 def _resolve_regions(
-    original: str | Path, spans: Iterable[Any]
+    original: str | Path | BinaryIO, spans: Iterable[Any]
 ) -> list[tuple[int, tuple[float, float, float, float], str | None]]:
     direct: list[tuple[int, tuple[float, float, float, float], str | None]] = []
     char_spans: list[Any] = []
@@ -504,7 +506,7 @@ def _import_pdfplumber() -> Any:
 
 
 def _read_pdf_layout(
-    path: str | Path,
+    path: str | Path | BinaryIO,
 ) -> dict[int, tuple[tuple[Mapping[str, Any], ...], tuple[Mapping[str, Any], ...]]]:
     pdfplumber = _import_pdfplumber()
     layout: dict[int, tuple[tuple[Any, ...], tuple[Any, ...]]] = {}
@@ -574,8 +576,8 @@ def _box_covers(
 
 
 def _visual_change(
-    original: str | Path,
-    redacted: str | Path,
+    original: str | Path | BinaryIO,
+    redacted: str | Path | BinaryIO,
     page: int,
     region: tuple[float, float, float, float],
     *,
@@ -616,7 +618,7 @@ def _default_rasterizer() -> Rasterizer | None:
 
 
 def _pdfplumber_region_bytes(  # pragma: no cover - requires a raster backend.
-    path: str | Path,
+    path: str | Path | BinaryIO,
     page: int,
     region: tuple[float, float, float, float],
     resolution: int = 150,

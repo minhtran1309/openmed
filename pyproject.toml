@@ -89,6 +89,7 @@ dev = [
   "nbclient>=0.8.0",
   "nbformat>=5.9.0",
   "ipykernel>=6.0",
+  "pdfplumber>=0.11",
 ]
 
 cli = [
@@ -430,6 +431,14 @@ service = [
   "protobuf>=5.26,<7",
   "strawberry-graphql[fastapi]>=0.327.2,<1",
   "uvicorn[standard]>=0.29",
+]
+
+# PDF redaction verification for the lean service (POST /v1/verify/pdf).
+# pdfplumber (MIT) brings pdfminer.six (MIT), pypdfium2 (Apache-2.0/BSD-3,
+# the raster backend for the pixel check) and Pillow (MIT-CMU). PyMuPDF is
+# AGPL and is deliberately never a dependency.
+lean-pdf = [
+  "pdfplumber>=0.11",
 ]
 
 # Client libraries only. OpenMed never installs Triton or KServe servers.

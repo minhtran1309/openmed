@@ -1,7 +1,8 @@
 """Fixed error vocabulary and the single error-response helper.
 
 Every non-200 response of the lean service has the body
-``{"error_code": CODE}`` and nothing else. Request text is never echoed and
+``{"error_code": CODE}`` and nothing else, except ``REGION_OUT_OF_BOUNDS``,
+which adds the 1-based ``page``. Request text is never echoed and
 exception messages are never logged, since they may carry PHI.
 """
 
@@ -34,6 +35,10 @@ ERROR_CODES: tuple[str, ...] = (
     "DETECT_FAILED",
     "APPLY_FAILED",
     "AUDIT_KEY_MISSING",
+    "PDF_UNREADABLE",
+    "PAGE_COUNT_MISMATCH",
+    "REGION_OUT_OF_BOUNDS",
+    "VERIFY_FAILED",
 )
 
 _STATUS: dict[str, int] = {
@@ -43,6 +48,7 @@ _STATUS: dict[str, int] = {
     "DETECT_FAILED": 500,
     "APPLY_FAILED": 500,
     "AUDIT_KEY_MISSING": 500,
+    "VERIFY_FAILED": 500,
 }
 
 
@@ -56,29 +62,53 @@ class LeanError(Exception):
 
     Args:
         error_code: A member of ``ERROR_CODES``.
+        page: Optional 1-based page number, added to the body as ``page``.
+            Only ``REGION_OUT_OF_BOUNDS`` sets it.
 
     Raises:
         ValueError: If the code is not in the fixed vocabulary.
     """
 
-    def __init__(self, error_code: str) -> None:
+    def __init__(self, error_code: str, *, page: int | None = None) -> None:
         if error_code not in ERROR_CODES:
             raise ValueError("error_code is not in the documented vocabulary")
         super().__init__(error_code)
         self.error_code = error_code
+        self.page = page
 
 
-def error_response(error_code: str, status_code: int | None = None) -> JSONResponse:
-    """Build the one allowed error body for ``error_code``."""
+def error_response(
+    error_code: str,
+    status_code: int | None = None,
+    *,
+    page: int | None = None,
+) -> JSONResponse:
+    """Build the one allowed error body for ``error_code``.
+
+    Args:
+        error_code: A vocabulary code; anything else becomes ``INTERNAL_ERROR``.
+        status_code: Overrides the code's default HTTP status.
+        page: When set, added to the body as ``page`` (a 1-based page number).
+
+    Returns:
+        ``{"error_code": CODE}``, plus ``page`` only when it is set.
+    """
     code = error_code if error_code in ERROR_CODES else "INTERNAL_ERROR"
+    body: dict[str, Any] = {"error_code": code}
+    if page is not None:
+        body["page"] = page
     return JSONResponse(
-        {"error_code": code},
+        body,
         status_code=status_code if status_code is not None else status_for(code),
     )
 
 
 def _handle_error_code(request: Request, exc: Exception) -> JSONResponse:
-    return error_response(exc.error_code)  # type: ignore[attr-defined]
+    page = getattr(exc, "page", None)
+    return error_response(
+        exc.error_code,  # type: ignore[attr-defined]
+        page=page if isinstance(page, int) else None,
+    )
 
 
 def _handle_http(request: Request, exc: Exception) -> JSONResponse:

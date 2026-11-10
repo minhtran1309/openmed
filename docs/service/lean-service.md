@@ -34,12 +34,14 @@ trailing newlines, while `open(file).read()` keeps them).
 | `POST` | `/v1/detect` | Detect identifiers in segments under a policy |
 | `POST` | `/v1/apply` | Render caller-recorded spans (`mark` + date shift) |
 | `POST` | `/v1/selftest` | Run a fixed synthetic probe through detect and apply |
+| `POST` | `/v1/verify/pdf` | Verify a black-box redacted PDF against its original |
 | `GET` | `/v1/schemas/{name}` | JSON Schema of a request or response model |
 
 Request and response shapes are published as JSON Schemas at
 `/v1/schemas/{name}`: `detect_request`, `detect_response`, `apply_request`,
-`apply_response`, `selftest_response`, `policy_coverage_response`,
-`provenance_response`, `health_response` and `error_response`. Every model
+`apply_response`, `selftest_response`, `verify_pdf_regions`,
+`verify_pdf_response`, `policy_coverage_response`, `provenance_response`,
+`health_response` and `error_response`. Every model
 rejects unknown fields.
 
 ## Errors
@@ -48,10 +50,13 @@ Error codes: `INVALID_REQUEST`, `INTERNAL_ERROR`, `NOT_FOUND`, `UNKNOWN_POLICY`,
 `EMPTY_DOCUMENT`, `DUPLICATE_SEGMENT_ID`, `UNKNOWN_SEGMENT_ID`,
 `SPAN_OUT_OF_RANGE`, `SPAN_INVERTED`, `UNKNOWN_LABEL`, `UNSUPPORTED_TREATMENT`,
 `DATE_SHIFT_KEY_REQUIRED`, `DETECT_FAILED`, `APPLY_FAILED`,
-`AUDIT_KEY_MISSING`.
+`AUDIT_KEY_MISSING`, `PDF_UNREADABLE`, `PAGE_COUNT_MISMATCH`,
+`REGION_OUT_OF_BOUNDS`, `VERIFY_FAILED`.
 
 `NOT_FOUND` and `UNKNOWN_POLICY` are 404; `INTERNAL_ERROR`, `DETECT_FAILED`,
-`APPLY_FAILED` and `AUDIT_KEY_MISSING` are 500; every other code is 400.
+`APPLY_FAILED`, `AUDIT_KEY_MISSING` and `VERIFY_FAILED` are 500; every other
+code is 400. The body is `{"error_code": CODE}` only, except
+`REGION_OUT_OF_BOUNDS`, which adds the 1-based `page` of the offending region.
 `AUDIT_KEY_MISSING` is returned by `/v1/apply` only when an app was started
 without its startup check (for example in tests) and the key is missing.
 Request validation failures (bad JSON, missing or extra fields, wrong types)
@@ -249,6 +254,97 @@ it runs in still needs `OPENMED_AUDIT_KEY` to start.
 as `[PERSON_1]` or as `[PERSON_FN_1] [PERSON_LN_1]`. The probe text must stay identical to the
 consumer's copy.
 
+## Verify PDF
+
+`POST /v1/verify/pdf` checks that a black-box redaction really removed the
+text it covers. It needs the `lean-pdf` extra (`pip install
+"openmed[service,lean-pdf]"`), which brings pdfplumber (MIT), pdfminer.six
+(MIT), pypdfium2 (Apache-2.0/BSD-3, the raster backend) and Pillow (MIT-CMU).
+The Docker image installs it. PyMuPDF (AGPL) is never a dependency.
+
+The body is `multipart/form-data` with three parts:
+
+| Part | Content |
+|---|---|
+| `original` | The source PDF |
+| `redacted` | The redacted PDF |
+| `regions` | JSON `[{"page": 1, "bbox": [x0, top, x1, bottom]}, ...]` |
+
+`page` is 1-based. `bbox` is in PDF points with a top-left origin
+(pdfplumber's raw page coordinates), with `x0 < x1` and `top < bottom`. Each
+region may overhang its page by at most 0.5 pt. A request carries 1 to 256
+regions; more is `INVALID_REQUEST`. The body is capped at 64 MiB and is read
+and parsed in memory, off the event loop: uploads are never written to disk.
+
+Pages whose MediaBox or CropBox origin is not `(0, 0)` are not normalised:
+bounds and pixel crops use the raw page coordinates, so such pages may give
+imprecise bounds checks and verify as `no_box` or `unverifiable`. This fails
+closed; it never yields a false `passed`.
+
+For every region the service checks that no selected source word remains
+extractable anywhere in the redacted PDF (moved, split and duplicated copies
+count), that no selectable word lies under the region, and that an opaque box
+covers it. With the
+raster backend installed, the region is also rendered in both PDFs and must
+differ. Each page of each PDF is rendered at most once per request, at the
+lower of 150 dpi and the resolution that keeps the render within 25
+megapixels. When that resolution would fall below 36 dpi (a very large page),
+the page is not rendered and its regions are `unverifiable` unless they leak
+text. Identical regions (same page and bbox) are checked once and counted once
+in `text_removal`, but each is still listed in `regions`.
+
+```json
+{
+  "passed": true,
+  "regions": [
+    {"page": 1, "bbox": [112.7, 62.5, 164.1, 74.5], "status": "passed",
+     "residual_word_count": 0}
+  ],
+  "text_removal": {"selected": 2, "residual": 0},
+  "report_sha256": "<64 hex digits>"
+}
+```
+
+`status` is decided in this order:
+
+1. `unverifiable`: the region has no extractable source words, for example on
+   a scanned page or over an image. **Native pages only**: such a region is
+   never `passed`; apply your own scanned-page rule to it.
+2. `text_leak`: a selected word is still extractable, under the region or
+   anywhere else.
+3. `unverifiable` again when the page is too large to render within the pixel
+   budget (see above).
+4. `no_box`: no opaque box covers the region (or, with the raster backend, its
+   pixels did not change).
+5. `passed`.
+
+`residual_word_count` is the larger of the under-region and whole-document
+counts. `text_removal` sums the selected source words and those still
+extractable. The top-level `passed` is true only when every region passed, so
+one `unverifiable` region makes it false. `report_sha256` is the SHA-256 hex
+digest of the canonical JSON (as in [Canonical
+serialisation](#canonical-serialisation)) of the body without
+`report_sha256`. The response carries counts, boxes and that hash only, and
+nothing from the PDFs is logged.
+
+pdfminer logs page text at DEBUG. The service silences the `pdfminer`,
+`pdfplumber`, `pypdfium2` and `PIL` loggers, and their existing child loggers,
+when the app is created. Operators must not re-enable these loggers (for
+example through a logging `dictConfig`): they would write page text, and so
+PHI, to the logs.
+
+Errors are checked in this order:
+
+1. `INVALID_REQUEST`: a missing, repeated or unknown part, a body over the
+   cap, `regions` that is not JSON, empty, longer than 256, has a page below 1
+   or an inverted bbox.
+2. `PDF_UNREADABLE`: either PDF cannot be opened or has no pages.
+3. `PAGE_COUNT_MISMATCH`: the two PDFs have different page counts.
+4. `REGION_OUT_OF_BOUNDS`: a region's page is beyond the page count, or its
+   bbox lies outside the page by more than 0.5 pt. The body carries `page`.
+5. `VERIFY_FAILED` (500): any other failure. Only the exception type is
+   logged.
+
 ## Known gaps in mt.1
 
 - `person_tag` and `year_tag` depend on the PII model. `date_shift` does too:
@@ -278,7 +374,7 @@ No github.com access is needed. Copy the artifacts over any local channel.
 Wheel folder:
 
 ```bash
-pip install --no-index --find-links /path/to/wheelhouse "openmed[service]"
+pip install --no-index --find-links /path/to/wheelhouse "openmed[service,lean-pdf]"
 ```
 
 Image via `docker save` / `docker load`:

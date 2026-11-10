@@ -6,12 +6,13 @@ request and response is published at ``/v1/schemas/{name}``.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    RootModel,
     StrictBool,
     StrictInt,
     StrictStr,
@@ -36,6 +37,10 @@ ErrorCode = Literal[
     "DETECT_FAILED",
     "APPLY_FAILED",
     "AUDIT_KEY_MISSING",
+    "PDF_UNREADABLE",
+    "PAGE_COUNT_MISMATCH",
+    "REGION_OUT_OF_BOUNDS",
+    "VERIFY_FAILED",
 ]
 assert tuple(ErrorCode.__args__) == ERROR_CODES  # type: ignore[attr-defined]
 
@@ -263,11 +268,84 @@ class ApplyResponse(BaseModel):
     attestation: dict[str, Any]
 
 
+class VerifyRegion(BaseModel):
+    """One redaction region of a ``POST /v1/verify/pdf`` request.
+
+    ``page`` is 1-based. ``bbox`` is ``[x0, top, x1, bottom]`` in PDF points
+    with a top-left origin (pdfplumber's native coordinates).
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    page: StrictInt = Field(ge=1)
+    bbox: list[Annotated[float, Field(allow_inf_nan=False)]] = Field(
+        min_length=4, max_length=4
+    )
+
+    @model_validator(mode="after")
+    def _check_bbox(self) -> VerifyRegion:
+        x0, top, x1, bottom = self.bbox
+        if x0 >= x1 or top >= bottom:
+            raise ValueError("bbox must have x0 < x1 and top < bottom")
+        return self
+
+
+#: Most regions one ``POST /v1/verify/pdf`` request may carry.
+MAX_VERIFY_REGIONS = 256
+
+
+class VerifyPdfRegions(RootModel[list[VerifyRegion]]):
+    """The ``regions`` part of ``POST /v1/verify/pdf``: 1 to 256 regions."""
+
+    root: list[VerifyRegion] = Field(min_length=1, max_length=MAX_VERIFY_REGIONS)
+
+
+class VerifyRegionResult(BaseModel):
+    """Verification status of one region. Counts and boxes only.
+
+    ``status`` is ``unverifiable`` when the region has no extractable source
+    words (scanned pages, images), ``text_leak`` when a selected word is still
+    extractable, ``no_box`` when no opaque box covers the region, and
+    ``passed`` otherwise.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    page: int
+    bbox: list[float]
+    status: Literal["passed", "text_leak", "no_box", "unverifiable"]
+    residual_word_count: int
+
+
+class VerifyTextRemoval(BaseModel):
+    """Selected source words and how many of them remain extractable."""
+
+    model_config = ConfigDict(extra="forbid")
+    selected: int
+    residual: int
+
+
+class VerifyPdfResponse(BaseModel):
+    """Response of ``POST /v1/verify/pdf``. Counts, boxes and hashes only.
+
+    ``passed`` is true only when every region passed. ``report_sha256`` is
+    the SHA-256 hex digest of the canonical JSON of the body without it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    passed: bool
+    regions: list[VerifyRegionResult]
+    text_removal: VerifyTextRemoval
+    report_sha256: str
+
+
 class ErrorResponse(BaseModel):
-    """Body of every non-200 response."""
+    """Body of every non-200 response.
+
+    ``page`` (1-based) is present only for ``REGION_OUT_OF_BOUNDS``.
+    """
 
     model_config = ConfigDict(extra="forbid")
     error_code: ErrorCode
+    page: int | None = None
 
 
 _REGISTRY: dict[str, type[BaseModel]] = {}
@@ -298,3 +376,5 @@ register_schema("detect_response", DetectResponse)
 register_schema("selftest_response", SelftestResponse)
 register_schema("apply_request", ApplyRequest)
 register_schema("apply_response", ApplyResponse)
+register_schema("verify_pdf_regions", VerifyPdfRegions)
+register_schema("verify_pdf_response", VerifyPdfResponse)

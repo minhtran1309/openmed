@@ -51,6 +51,10 @@ def test_error_vocabulary_is_fixed() -> None:
         "DETECT_FAILED",
         "APPLY_FAILED",
         "AUDIT_KEY_MISSING",
+        "PDF_UNREADABLE",
+        "PAGE_COUNT_MISMATCH",
+        "REGION_OUT_OF_BOUNDS",
+        "VERIFY_FAILED",
     )
     with pytest.raises(ValueError):
         LeanError("NOT_A_CODE")

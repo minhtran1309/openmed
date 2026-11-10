@@ -265,6 +265,7 @@ def test_redact_email_redacts_headers_plain_html_and_attachment_metadata(
 
 def test_attached_pdf_is_redacted_through_real_pdf_handler(monkeypatch):
     pytest.importorskip("pdfplumber")
+    pytest.importorskip("pikepdf")
     pytest.importorskip("PIL.Image")
     monkeypatch.setattr(base, "_missing_multimodal_dependencies", lambda: [])
 

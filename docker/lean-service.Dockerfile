@@ -1,6 +1,8 @@
 # Lean OpenMed service image: installs the locally built wheel with the
-# `service` extra and serves the lean app with uvicorn. No model is baked in
-# or loaded at startup. Build with scripts/release_mt.sh <tag>.
+# `service` and `lean-pdf` extras (pdfplumber plus the pypdfium2 raster
+# backend for /v1/verify/pdf; never PyMuPDF, which is AGPL) and serves the
+# lean app with uvicorn. No model is baked in or loaded at startup. Build
+# with scripts/release_mt.sh <tag>.
 ARG PYTHON_IMAGE=python:3.11-slim@sha256:be1575ed968de893bd54f4c56315ff7c4736ce522c1bca08fd521731aafc0d76
 FROM ${PYTHON_IMAGE}
 
@@ -13,7 +15,7 @@ WORKDIR /app
 
 # dist/ holds the wheel produced by `python -m build --wheel`.
 COPY dist/*.whl /tmp/wheels/
-RUN pip install --no-cache-dir "$(ls /tmp/wheels/*.whl)[service]" \
+RUN pip install --no-cache-dir "$(ls /tmp/wheels/*.whl)[service,lean-pdf]" \
     && rm -rf /tmp/wheels
 
 EXPOSE 8080

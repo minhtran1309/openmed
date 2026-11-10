@@ -18,7 +18,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, Request
+from starlette.concurrency import run_in_threadpool
 
 from openmed.compliance.safe_harbor import generate_safe_harbor_attestation
 from openmed.core.apply_audit import AUDIT_KEY_ENV, build_apply_audit
@@ -40,9 +41,11 @@ from .schemas import (
     ProvenanceResponse,
     SelftestRequest,
     SelftestResponse,
+    VerifyPdfResponse,
     get_schema,
 )
 from .selftest import run_selftest
+from .verify import parse_and_verify, read_capped_body, silence_pdf_library_logs
 
 logger = logging.getLogger("openmed.service.lean")
 
@@ -257,6 +260,37 @@ def selftest(
     return {"checks": run_selftest(model_detector)}
 
 
+@router.post("/v1/verify/pdf", response_model=VerifyPdfResponse)
+async def verify_pdf(request: Request) -> dict[str, Any]:
+    """Verify a black-box redacted PDF against its original.
+
+    The body is ``multipart/form-data`` with parts ``original`` (PDF),
+    ``redacted`` (PDF) and ``regions`` (JSON ``[{page, bbox}]``, 1 to 256
+    regions, 1-based pages, ``[x0, top, x1, bottom]`` in points with a
+    top-left origin). It is read in memory, never spooled to disk, and parsed
+    and verified in a worker thread. Native pages only: a region with no
+    extractable source text is ``unverifiable``.
+
+    Args:
+        request: The raw request; the body is capped at
+            ``MAX_VERIFY_BODY_BYTES``.
+
+    Returns:
+        ``passed``, per-region ``page``/``bbox``/``status``/
+        ``residual_word_count``, ``text_removal`` counts and
+        ``report_sha256``. Counts, boxes and hashes only.
+
+    Raises:
+        LeanError: ``INVALID_REQUEST``, ``PDF_UNREADABLE``,
+            ``PAGE_COUNT_MISMATCH``, ``REGION_OUT_OF_BOUNDS`` (with ``page``)
+            or ``VERIFY_FAILED``.
+    """
+    body = await read_capped_body(request)
+    content_type = request.headers.get("content-type", "")
+    # Parsing and verifying are CPU and memory heavy: keep them off the loop.
+    return await run_in_threadpool(parse_and_verify, body, content_type)
+
+
 @router.get("/v1/schemas/{name}")
 def get_schema_by_name(name: str) -> dict[str, Any]:
     """Return a published JSON Schema or NOT_FOUND."""
@@ -285,6 +319,8 @@ def create_app(extra_routers: tuple[APIRouter, ...] = ()) -> FastAPI:
         lifespan=_lifespan,
     )
     install_error_handlers(app)
+    # pdfminer logs page text at DEBUG; the lean service never emits it.
+    silence_pdf_library_logs()
     app.include_router(router)
     for extra in extra_routers:
         app.include_router(extra)

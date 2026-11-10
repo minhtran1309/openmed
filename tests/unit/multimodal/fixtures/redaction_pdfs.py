@@ -21,6 +21,8 @@ _SECOND_LINE = "MRN 12345"
 
 # Generous box (PDF bottom-up coords) covering the "John Doe" glyphs at y=720.
 _REDACTION_RECT = (110.0, 708.0, 95.0, 22.0)
+# A filled block (PDF bottom-up coords) standing in for a scanned image.
+_SCANNED_RECT = (72.0, 600.0, 300.0, 120.0)
 
 
 def _text_block(lines: list[tuple[float, float, str]]) -> bytes:
@@ -135,6 +137,41 @@ def moved_leak_pdf_bytes() -> bytes:
             ]
         )
     )
+
+
+def no_box_redaction_pdf_bytes() -> bytes:
+    """Incomplete redaction: the name is removed but no box is drawn."""
+    return build_pdf(
+        _text_block([(72.0, 720.0, _SCRUBBED_LINE), (72.0, 700.0, _SECOND_LINE)])
+    )
+
+
+def scanned_page_pdf_bytes(*, redacted: bool = False) -> bytes:
+    """Two pages: a native text page 1 and an image-like page 2.
+
+    Page 2 holds only a filled rectangle and no text layer, standing in for a
+    scanned page. With ``redacted=True`` page 1 is the clean redaction (name
+    removed, box drawn); otherwise it is the original page.
+    """
+    lines = [
+        (72.0, 720.0, _SCRUBBED_LINE if redacted else _NAME_LINE),
+        (72.0, 700.0, _SECOND_LINE),
+    ]
+    page_one = (_rect_fill(_REDACTION_RECT) if redacted else b"") + _text_block(lines)
+    return build_pdf_pages([page_one, _rect_fill(_SCANNED_RECT)])
+
+
+def large_padded_pdf_bytes(min_size: int) -> bytes:
+    """The original page with its content stream padded past ``min_size`` bytes.
+
+    The padding is PDF comment lines, which renderers ignore, so the page reads
+    exactly like :func:`original_pdf_bytes` while the file is large enough to
+    trip upload spooling thresholds (Starlette spools parts over 1 MiB).
+    """
+    body = _text_block([(72.0, 720.0, _NAME_LINE), (72.0, 700.0, _SECOND_LINE)])
+    line = b"%" + b"0" * 1022 + b"\n"
+    repeats = max(0, min_size - len(body)) // len(line) + 1
+    return build_pdf(line * repeats + body)
 
 
 def separated_moved_leak_pdf_bytes() -> bytes:
@@ -286,10 +323,13 @@ __all__ = [
     "clean_redaction_pdf_bytes",
     "duplicate_token_clean_redaction_pdf_bytes",
     "duplicate_token_original_pdf_bytes",
+    "large_padded_pdf_bytes",
     "leaky_redaction_pdf_bytes",
     "moved_leak_pdf_bytes",
     "multipage_pdf_bytes",
+    "no_box_redaction_pdf_bytes",
     "original_pdf_bytes",
+    "scanned_page_pdf_bytes",
     "separated_moved_leak_pdf_bytes",
     "shifted_non_phi_pdf_bytes",
 ]
