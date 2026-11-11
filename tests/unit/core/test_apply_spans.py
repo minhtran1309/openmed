@@ -697,7 +697,6 @@ def _ok_doc():
             {},
             "INVALID_REQUEST",
         ),
-        (_ok_doc(), {"treatment": "replace"}, "UNSUPPORTED_TREATMENT"),
         (_ok_doc(), {"treatment": "generalise"}, "UNSUPPORTED_TREATMENT"),
         (_ok_doc(), {"treatment": "keep"}, "UNSUPPORTED_TREATMENT"),
         (_ok_doc(), {"treatment": "scramble"}, "UNSUPPORTED_TREATMENT"),

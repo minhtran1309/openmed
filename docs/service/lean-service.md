@@ -51,7 +51,7 @@ Error codes: `INVALID_REQUEST`, `INTERNAL_ERROR`, `NOT_FOUND`, `UNKNOWN_POLICY`,
 `SPAN_OUT_OF_RANGE`, `SPAN_INVERTED`, `UNKNOWN_LABEL`, `UNSUPPORTED_TREATMENT`,
 `DATE_SHIFT_KEY_REQUIRED`, `DETECT_FAILED`, `APPLY_FAILED`,
 `AUDIT_KEY_MISSING`, `PDF_UNREADABLE`, `PAGE_COUNT_MISMATCH`,
-`REGION_OUT_OF_BOUNDS`, `VERIFY_FAILED`.
+`REGION_OUT_OF_BOUNDS`, `VERIFY_FAILED`, `SURROGATE_KEY_REQUIRED`.
 
 `NOT_FOUND` and `UNKNOWN_POLICY` are 404; `INTERNAL_ERROR`, `DETECT_FAILED`,
 `APPLY_FAILED`, `AUDIT_KEY_MISSING` and `VERIFY_FAILED` are 500; every other
@@ -188,25 +188,126 @@ give exactly the same response as before; only table-column findings carry
 
 `POST /v1/apply` takes a `document` of segments, each with its `text` and the
 caller-recorded `spans` (`span_id`, `start`, `end`, canonical `label`, optional
-`subtype`, and optional `source` and `score` copied from the detect findings),
+`subtype` and `replacement` (1 to 256 characters), and optional `source` and
+`score` copied from the detect findings),
 plus `treatment` and `policy`. It never detects. `source` is one of `model`,
 `pattern`, `table-column` or `manual`, and `score` lies in `[0, 1]`; both only
 feed the audit and never change the rendering. Labels must be
 canonical (`MEDICARE_NUMBER`, not `medicare`); anything else is
 `UNKNOWN_LABEL`.
 
-In mt.1 only the `mark` treatment is implemented: masked spans become
-`[LABEL_n]` tags. Name parts keep a `PERSON` prefix: `FIRST_NAME`,
-`MIDDLE_NAME` and `LAST_NAME` render as `[PERSON_FN_n]`, `[PERSON_MN_n]` and
-`[PERSON_LN_n]`, each numbered per part by value, so a shared surname keeps one
-number. A whole-name `PERSON` span stays `[PERSON_n]`. `replace`, `generalise` and `keep` are accepted by the schema
-and return `UNSUPPORTED_TREATMENT`. Spans whose policy action is `shift` are
-shifted day-first dates; pass `offset_days`, or `patient_key` with `secret`, or
-the request is `DATE_SHIFT_KEY_REQUIRED` when a shift is needed. A date that
-cannot be parsed, or a non-date label with a `shift` action, is masked. The
-response carries the rendered segments, per-span actions in output
-coordinates, merges of overlapping spans, the policy fingerprint, a signed
-`audit` and a Safe Harbor `attestation`.
+The `mark` and `replace` treatments are implemented; `generalise` and `keep`
+are accepted by the schema and return `UNSUPPORTED_TREATMENT`.
+
+Under `mark`, masked spans become `[LABEL_n]` tags. Name parts keep a `PERSON`
+prefix: `FIRST_NAME`, `MIDDLE_NAME` and `LAST_NAME` render as
+`[PERSON_FN_n]`, `[PERSON_MN_n]` and `[PERSON_LN_n]`, each numbered per part by
+value, so a shared surname keeps one number. A whole-name `PERSON` span stays
+`[PERSON_n]`. A span's `replacement` is ignored, but it is still validated:
+since mt.3 an empty `replacement` is `INVALID_REQUEST` under every treatment,
+`mark` included (mt.2 accepted it). Spans whose policy action is
+`shift` are shifted day-first dates; pass `offset_days`, or `patient_key` with
+`secret`, or the request is `DATE_SHIFT_KEY_REQUIRED` when a shift is needed.
+A date that cannot be parsed, or a non-date label with a `shift` action, is
+masked. A `DATE_OF_BIRTH` is tagged, never shifted. The response carries the
+rendered segments, per-span actions in output coordinates, merges of
+overlapping spans, the policy fingerprint, a signed `audit` and a Safe Harbor
+`attestation`.
+
+### Replace
+
+`replace` renders per-patient surrogates and the caller's `replacement` text.
+It always needs `patient_key` with `secret`, even when no span needs a
+surrogate; without them, or with `offset_days` instead, the request is
+`SURROGATE_KEY_REQUIRED` (400). `offset_days` together with `patient_key` stays
+`INVALID_REQUEST`.
+
+Each cluster of overlapping spans resolves by the first matching row:
+
+| # | Condition | `mark` | `replace` |
+|---|---|---|---|
+| 1 | single-span cluster with `replacement` | as rows 2-7 (ignored) | `replacement` |
+| 2 | policy action `keep` | `keep` | `keep` |
+| 4 | all labels ⊆ {`DATE`} and policy `shift` | `shift` | `shift` |
+| 5 | all labels ⊆ {`DATE_OF_BIRTH`, `DATE`} with ≥1 DOB and policy `shift` | tag | `shift` |
+| 6 | all labels are surrogate labels | tag | surrogate (`replace`) |
+| 7 | anything else | tag | tag |
+
+Row 3 (cancer generalisation) belongs to `generalise` and is not yet
+implemented. A date that cannot be shifted (year-only, month-year,
+unparseable) renders `[DATE_n]`, or `[DATE_OF_BIRTH_n]` for a DOB, with action
+`mark` under every treatment.
+
+- **Surrogate labels.** `PERSON`, `FIRST_NAME`, `MIDDLE_NAME`, `LAST_NAME`,
+  `EMAIL`, `PHONE`, `STREET_ADDRESS`, `LOCATION`, `ZIPCODE`, `ORGANIZATION`,
+  `URL`, `USERNAME`, `ID_NUM`, `ACCOUNT_NUMBER` and the 8 AU identifier labels
+  (`MEDICARE_NUMBER`, `TFN`, `IHI`, `ABN`, `ACN`, `AHPRA_NUMBER`,
+  `DVA_NUMBER`, `MEDICARE_PROVIDER_NUMBER`). Any other label, `SSN` and
+  `ETHNICITY` included, is tagged.
+- **Source.** Surrogates come from openmed's existing anonymizer with the
+  `en_AU` Faker locale. AU identifiers are checksum-valid (Medicare, TFN, IHI,
+  ABN, ACN, provider number) or grammar-valid (AHPRA, DVA) fakes in the
+  canonical layout, never copied from the source layout. Phones come from the
+  ACMA fictional ranges: a mobile becomes one of the 30 fictional mobiles, a
+  landline keeps its area code. **A checksum-valid fake can coincide with a
+  real person's number.** It is never the source's own number: a surrogate
+  never equals its source, nor any other source value of the same call (so
+  a real value is never moved onto another person), and a name surrogate
+  (`PERSON`, `FIRST_NAME`, `MIDDLE_NAME`, `LAST_NAME`) never shares a
+  case-insensitive word with any source name of the call (`Mary Jones` never
+  becomes `Shelly Jones`). A `STREET_ADDRESS` or `LOCATION` surrogate never
+  shares a significant word (street name, suburb, property name) with any
+  source address or location of the call (`12 George Street` never becomes
+  `8 George Circle`); numbers, unit and level markers, street types, states
+  and postcodes do not count. Words are compared accent-insensitively
+  (`José` matches `Jose`); initials compare exactly.
+- **Dates** shift exactly as under `mark`, by
+  `stable_offset_for(patient_key, 365, secret)`, and `DATE_OF_BIRTH` shifts
+  too. Dates are never replaced with a random date.
+- **Caller `replacement`.** On a single (unmerged) span the text is rendered
+  verbatim, ahead of any built-in rendering (surrogate, policy `keep`, date
+  shift), and reported as `replacement`. A merged cluster ignores every
+  member's `replacement` and resolves by rows 2-7. A `replacement` that
+  normalises to its own source (ignoring case and whitespace, or layout for
+  phones and identifiers) removes nothing, so it renders the tag with action
+  `mark` and is audited as `mask`. Beyond that, the content of a
+  `replacement` is the caller's responsibility: openmed does not check it for
+  other identifiers.
+- **Reported action.** `spans[].action` is the rendering actually applied:
+  `mark`, `shift`, `keep`, `replace` (an openmed surrogate) or `replacement`
+  (the caller's text). A fallback reports `mark`, never the requested
+  treatment.
+- **Consistency.** The same value gets the same surrogate for the same
+  `patient_key` and `secret` in every call and every process; a different
+  `patient_key` gives a different surrogate. Matching ignores case and
+  whitespace for names and other text labels, and layout for phones and
+  identifiers (`+61 491 570 156` and `0491 570 156` are one phone; `NX123456`
+  and `QX123456` stay two DVA numbers).
+- **Collisions.** Two different values in one call never share a surrogate,
+  across all labels. A candidate that collides, equals any source value of
+  the call, or (for a name) shares a word with a source name is retried; when retries run out the span falls back to its tag with action
+  `mark`. The 30-number fictional mobile pool is the realistic case: a call
+  with more than 30 distinct mobiles tags the excess, and fewer distinct
+  mobiles can still collide and fall back.
+
+**No state.** The service keeps no state. Cross-document consistency is
+derived from `secret` and `patient_key` on every call. Each call builds a
+request-local in-memory vault, keyed by
+`HMAC-SHA256(secret, "openmed.apply.surrogate.v1\0" + patient_key)` and
+dropped when the call returns. It keys entries by an HMAC of the source, so it
+never holds an original value in clear; nothing is written to disk, cached
+across requests or held in module state. The raw `patient_key` is only ever an
+HMAC input, and the caller's `secret` is used, not `OPENMED_AUDIT_KEY`, so
+rotating the audit key does not change surrogates.
+
+**Determinism limits.** Surrogates are stable per openmed release. A Faker
+upgrade or a generator change can change them, so release notes flag any
+Faker bump in `uv.lock`. A collision retry depends on the other values in the
+same call (another surrogate or any source value of the call), so in that
+rare case a value can get a different surrogate in another document, and the no-shared-surrogate guarantee holds within one call
+only (two different mobiles of one patient may share a fictional mobile across
+calls). `PERSON "Jane Citizen"` and `FIRST_NAME "Jane"` get independent
+surrogates: name-part linkage is out of scope.
 
 ### Audit
 
@@ -227,20 +328,27 @@ coordinates, merges of overlapping spans, the policy fingerprint, a signed
   `output_length` for every segment.
 - **Spans.** One entry per rendered span (a merged overlap is one entry).
   `start`/`end` are code-point offsets into the joined output. `action` is
-  `mask` (apply's `mark`), `shift` or `keep`; `evidence` holds `span_id`,
+  `mask` (apply's `mark`), `shift`, `keep` or `replace` (apply's `replace`
+  and `replacement`); `evidence` holds `span_id`,
   `segment_id`, `apply_action` and `merged_span_ids`. `sources` is the
   request `source` (or `caller`), `confidence` the request `score` (or `1.0`),
   and `threshold` is `0.0`. `text_hash` is `hmac-sha256:` plus the
   HMAC-SHA256 hex, under the audit key, of the source text covered by the span
   and its merged spans; it is keyed so short identifiers and source dates
-  cannot be brute-forced. `surrogate` is always `null` and `context` `{}`.
+  cannot be brute-forced. `surrogate` is `null` except for `replace` and
+  `replacement` spans, where it is `hmac-sha256:` plus the HMAC-SHA256 hex,
+  under the audit key, of the rendered value, never the value itself.
+  `context` is `{}`.
 - **Profile and provenance.** `policy` is the request policy;
   `resolved_profile` is the policy profile plus `treatment`,
   `policy_fingerprint` and `segments`. `detectors` lists one entry per span
   source, `safety_sweep` is `{"enabled": false}`, and `residual_risk` holds
-  `keep_span_count` and `shift_span_count`.
-- **Never recorded.** Span text, surrogates, context, the patient key, the
-  secret, the offset days and which shift mode was used. A keyed and an
+  `keep_span_count`, `shift_span_count`, `replace_span_count`,
+  `replacement_span_count` and `generalise_span_count` (the last three count
+  apply actions from `evidence.apply_action`).
+- **Never recorded.** Span text, surrogates and replacement texts in clear,
+  context, the patient key, the secret, the offset days and which shift mode
+  was used. A keyed and an
   explicit-offset render with the same offset give identical audits.
 - **Caller ids.** `span_id` and `segment_id` are copied into `evidence` and
   `resolved_profile.segments`, so they must be opaque and must never carry

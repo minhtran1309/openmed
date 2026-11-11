@@ -179,8 +179,8 @@ def test_forcing_non_shift_action_on_dates_fails_date_shift(monkeypatch) -> None
     """
     real = apply_spans_module._render_action
 
-    def never_shift(cluster):
-        action = real(cluster)
+    def never_shift(cluster, *args):
+        action = real(cluster, *args)
         return "mark" if action == "shift" else action
 
     monkeypatch.setattr(apply_spans_module, "_render_action", never_shift)

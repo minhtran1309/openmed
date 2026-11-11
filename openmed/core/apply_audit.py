@@ -3,8 +3,11 @@
 The report reuses :class:`openmed.core.audit.AuditReport`. It is built from the
 request document and ``ApplySpansResult.to_dict()``; ``apply_spans`` itself is
 unchanged. The report carries offsets, keyed hashes, labels, actions and
-provenance only: no span text, surrogate, context, patient key, secret or
-date-shift offset is ever recorded.
+provenance only: no span text, surrogate, replacement text, context, patient
+key, secret or date-shift offset is ever recorded. For spans rendered as
+``replace`` or ``replacement`` the ``surrogate`` field is ``"hmac-sha256:"``
+plus the HMAC-SHA256, under the audit key, of the rendered value (sliced from
+the output segment), never the value itself; it is ``None`` otherwise.
 
 Join rule: segments are joined with :data:`SEGMENT_JOIN` in document order.
 ``input_hash`` is ``"hmac-sha256:"`` plus the HMAC-SHA256, under the audit
@@ -45,12 +48,22 @@ SEGMENT_JOIN: Final = "\n"
 AUDIT_KEY_ENV: Final = "OPENMED_AUDIT_KEY"
 AUDIT_KEY_ID: Final = "openmed-lean"
 
-# apply's ``mark`` is the audit vocabulary's ``mask`` (core/schemas/span.py).
+# Apply actions in the audit vocabulary (``core/schemas/span.py``
+# ``ACTION_VALUES``): ``mark`` is ``mask`` and a caller ``replacement`` is
+# recorded as ``replace``. The precise apply action stays in
+# ``evidence.apply_action`` (mt.3 E3).
 _AUDIT_ACTIONS: Final[Mapping[str, str]] = {
     "mark": "mask",
     "shift": "shift",
     "keep": "keep",
+    "replace": "replace",
+    "replacement": "replace",
+    "generalise": "format_preserve",
 }
+# Apply actions whose rendered value is recorded as a keyed hash (mt.3 E13).
+_HASHED_RENDER_ACTIONS: Final[frozenset[str]] = frozenset(
+    {"replace", "replacement", "generalise"}
+)
 _CALLER_SOURCE: Final = "caller"
 _SOURCE_ORDER: Final[tuple[str, ...]] = (
     "model",
@@ -122,6 +135,7 @@ def build_apply_audit(
         merge["kept_span_id"]: list(merge["merged_span_ids"])
         for merge in result["merges"]
     }
+    output_texts = {segment["segment_id"]: segment["text"] for segment in out_segments}
     bases: dict[str, int] = {}
     cursor = 0
     for segment in out_segments:
@@ -141,6 +155,10 @@ def build_apply_audit(
         text_hash = _keyed_hash(key_bytes, source_text)
         score = kept.get("score")
         base = bases[segment_id]
+        surrogate = None
+        if out["action"] in _HASHED_RENDER_ACTIONS:
+            rendered = output_texts[segment_id][out["out_start"] : out["out_end"]]
+            surrogate = _keyed_hash(key_bytes, rendered)
         spans.append(
             AuditSpan(
                 start=base + out["out_start"],
@@ -151,7 +169,7 @@ def build_apply_audit(
                 confidence=1.0 if score is None else float(score),
                 threshold=0.0,
                 action=_AUDIT_ACTIONS[out["action"]],
-                surrogate=None,
+                surrogate=surrogate,
                 text_hash=text_hash,
                 evidence={
                     "span_id": span_id,
@@ -187,6 +205,12 @@ def build_apply_audit(
         residual_risk={
             "keep_span_count": sum(1 for s in spans if s.action == "keep"),
             "shift_span_count": sum(1 for s in spans if s.action == "shift"),
+            **{
+                f"{apply_action}_span_count": sum(
+                    1 for s in spans if s.evidence["apply_action"] == apply_action
+                )
+                for apply_action in ("replace", "replacement", "generalise")
+            },
         },
         openmed_version=result["provenance"]["openmed_version"],
         manifest_hash=manifest_hash(),

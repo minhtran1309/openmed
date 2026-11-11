@@ -39,6 +39,7 @@ ERROR_CODES: tuple[str, ...] = (
     "PAGE_COUNT_MISMATCH",
     "REGION_OUT_OF_BOUNDS",
     "VERIFY_FAILED",
+    "SURROGATE_KEY_REQUIRED",
 )
 
 _STATUS: dict[str, int] = {

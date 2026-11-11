@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import importlib
 import json
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -47,6 +48,11 @@ MUTATIONS = [
 ]
 
 FORBIDDEN_KEYS = {"text", "original_text", "offset_days", "patient_key", "secret"}
+SURROGATE_HASH = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
+REPLACEMENT = "Synthetic Group Wording"
+# ``replace`` always needs ``patient_key`` with ``secret`` (mt.3 E8), so it
+# runs with keys only; every other treatment runs both shift variants.
+KEYED_TREATMENTS = {"replace"}
 
 
 @pytest.fixture
@@ -169,24 +175,58 @@ def test_deidentified_text_hash_matches_output_segments(client) -> None:
         assert span["end"] == base + out_span["out_end"]
 
 
-@pytest.mark.parametrize("treatment", SUPPORTED_TREATMENTS)
+def _shift_variants():
+    variants = []
+    for treatment in SUPPORTED_TREATMENTS:
+        if treatment not in KEYED_TREATMENTS:
+            variants.append(pytest.param(treatment, {"offset_days": 10}, id="offset"))
+        variants.append(
+            pytest.param(
+                treatment,
+                {"patient_key": SYNTHETIC_KEY, "secret": SYNTHETIC_SECRET},
+                id="keyed",
+            )
+        )
+    return variants
+
+
 @pytest.mark.parametrize("policy", ["ccia_l1", "ccia_l2", "ccia_l3"])
-@pytest.mark.parametrize(
-    "shift",
-    [
-        {"offset_days": 10},
-        {"patient_key": SYNTHETIC_KEY, "secret": SYNTHETIC_SECRET},
-    ],
-    ids=["offset", "keyed"],
-)
+@pytest.mark.parametrize(("treatment", "shift"), _shift_variants())
 def test_no_phi_in_audit_or_attestation(client, treatment, policy, shift) -> None:
     document = _doc()
     text = f"Identifies as {NRP}."
     document.append(_seg("s3", text, [_span("e1", text, NRP, "ETHNICITY")]))
+    text = "Diagnosis: synthetic sarcoma wording."
+    document.append(
+        _seg(
+            "s4",
+            text,
+            [
+                _span(
+                    "c1",
+                    text,
+                    "synthetic sarcoma wording",
+                    "CANCER",
+                    replacement=REPLACEMENT,
+                )
+            ],
+        )
+    )
     response = _apply(client, document, treatment=treatment, policy=policy, **shift)
     assert response.status_code == 200
     body = response.json()
     assert KEY not in response.text
+    # Rendered surrogates and replacement texts may appear only in segments.
+    rendered = []
+    for out in body["spans"]:
+        if out["action"] in {"replace", "replacement"}:
+            segment = next(
+                s for s in body["segments"] if s["segment_id"] == out["segment_id"]
+            )
+            rendered.append(segment["text"][out["out_start"] : out["out_end"]])
+    if treatment == "replace":
+        assert REPLACEMENT in rendered
+        assert len(rendered) >= 2
     # An unkeyed input hash would let a reader brute-force names and offsets.
     unkeyed_input = hash_text("\n".join(s["text"] for s in document))
     for name in ("audit", "attestation"):
@@ -196,15 +236,20 @@ def test_no_phi_in_audit_or_attestation(client, treatment, policy, shift) -> Non
             NAME.upper(),
             DATE,
             NRP,
+            REPLACEMENT,
             SYNTHETIC_KEY,
             SYNTHETIC_SECRET,
             KEY,
             unkeyed_input,
+            *rendered,
         ):
             assert value not in serialized, name
         assert not FORBIDDEN_KEYS & set(_walk_keys(body[name])), name
     for span in body["audit"]["spans"]:
-        assert span["surrogate"] is None
+        if span["evidence"]["apply_action"] in {"replace", "replacement"}:
+            assert SURROGATE_HASH.fullmatch(span["surrogate"])
+        else:
+            assert span["surrogate"] is None
         assert span["context"] == {}
         assert span["text_hash"].startswith("hmac-sha256:")
 

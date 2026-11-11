@@ -1,0 +1,563 @@
+{
+  "recorded_at": "55a05163b",
+  "note": "Synthetic /v1/apply mark requests and their segments/spans/merges, recorded at the mt.2 base commit. Replayed byte-for-byte.",
+  "cases": [
+    {
+      "name": "names_dates_offset",
+      "request": {
+        "document": [
+          {
+            "segment_id": "s1",
+            "text": "Patient Zelphira Quandt admitted 04/07/2023; in 2019 too.",
+            "spans": [
+              {
+                "span_id": "n1",
+                "start": 8,
+                "end": 23,
+                "label": "PERSON"
+              },
+              {
+                "span_id": "d1",
+                "start": 33,
+                "end": 43,
+                "label": "DATE"
+              },
+              {
+                "span_id": "y1",
+                "start": 48,
+                "end": 52,
+                "label": "DATE"
+              }
+            ]
+          },
+          {
+            "segment_id": "s2",
+            "text": "ZELPHIRA QUANDT discharged 5 March 2024.",
+            "spans": [
+              {
+                "span_id": "n2",
+                "start": 0,
+                "end": 15,
+                "label": "PERSON"
+              },
+              {
+                "span_id": "d2",
+                "start": 27,
+                "end": 39,
+                "label": "DATE"
+              }
+            ]
+          }
+        ],
+        "treatment": "mark",
+        "policy": "ccia_l1",
+        "offset_days": 10
+      },
+      "expected": {
+        "segments": [
+          {
+            "segment_id": "s1",
+            "text": "Patient [PERSON_1] admitted 14/07/2023; in [DATE_1] too."
+          },
+          {
+            "segment_id": "s2",
+            "text": "[PERSON_1] discharged 15 March 2024."
+          }
+        ],
+        "spans": [
+          {
+            "span_id": "n1",
+            "segment_id": "s1",
+            "action": "mark",
+            "out_start": 8,
+            "out_end": 18
+          },
+          {
+            "span_id": "d1",
+            "segment_id": "s1",
+            "action": "shift",
+            "out_start": 28,
+            "out_end": 38
+          },
+          {
+            "span_id": "y1",
+            "segment_id": "s1",
+            "action": "mark",
+            "out_start": 43,
+            "out_end": 51
+          },
+          {
+            "span_id": "n2",
+            "segment_id": "s2",
+            "action": "mark",
+            "out_start": 0,
+            "out_end": 10
+          },
+          {
+            "span_id": "d2",
+            "segment_id": "s2",
+            "action": "shift",
+            "out_start": 22,
+            "out_end": 35
+          }
+        ],
+        "merges": []
+      }
+    },
+    {
+      "name": "au_labels_keyed_l3",
+      "request": {
+        "document": [
+          {
+            "segment_id": "a1",
+            "text": "Orvald Peskin, DOB 12/01/1961, Medicare 3664 73786 3, IHI 8003 6065 6665 8120, ABN 15 062 984 812, ph 0491 570 156, orvald@example.net, 12 Wattle Grove, Bundoora VIC 3083. Identifies as Wiradjuri. Seen at Glenmore Private Hospital. Leiomyosarcoma of the uterus.",
+            "spans": [
+              {
+                "span_id": "p1",
+                "start": 0,
+                "end": 13,
+                "label": "PERSON"
+              },
+              {
+                "span_id": "b1",
+                "start": 19,
+                "end": 29,
+                "label": "DATE_OF_BIRTH"
+              },
+              {
+                "span_id": "m1",
+                "start": 40,
+                "end": 52,
+                "label": "MEDICARE_NUMBER"
+              },
+              {
+                "span_id": "i1",
+                "start": 58,
+                "end": 77,
+                "label": "IHI"
+              },
+              {
+                "span_id": "ab",
+                "start": 83,
+                "end": 97,
+                "label": "ABN"
+              },
+              {
+                "span_id": "ph",
+                "start": 102,
+                "end": 114,
+                "label": "PHONE"
+              },
+              {
+                "span_id": "em",
+                "start": 116,
+                "end": 134,
+                "label": "EMAIL"
+              },
+              {
+                "span_id": "ad",
+                "start": 136,
+                "end": 170,
+                "label": "STREET_ADDRESS"
+              },
+              {
+                "span_id": "et",
+                "start": 186,
+                "end": 195,
+                "label": "ETHNICITY"
+              },
+              {
+                "span_id": "or",
+                "start": 205,
+                "end": 230,
+                "label": "ORGANIZATION"
+              },
+              {
+                "span_id": "ca",
+                "start": 232,
+                "end": 260,
+                "label": "CANCER",
+                "replacement": "Soft Tissue"
+              }
+            ]
+          },
+          {
+            "segment_id": "a2",
+            "text": "Review on Mar 3, 2024 by Dr Pemberly Tusk (AHPRA MED0001234567).",
+            "spans": [
+              {
+                "span_id": "d4",
+                "start": 10,
+                "end": 21,
+                "label": "DATE"
+              },
+              {
+                "span_id": "p2",
+                "start": 28,
+                "end": 41,
+                "label": "PERSON"
+              },
+              {
+                "span_id": "ah",
+                "start": 49,
+                "end": 62,
+                "label": "AHPRA_NUMBER"
+              }
+            ]
+          }
+        ],
+        "treatment": "mark",
+        "policy": "ccia_l3",
+        "patient_key": "synthetic-patient-key-golden",
+        "secret": "synthetic-secret-material-golden"
+      },
+      "expected": {
+        "segments": [
+          {
+            "segment_id": "a1",
+            "text": "[PERSON_1], DOB [DATE_OF_BIRTH_1], Medicare [MEDICARE_NUMBER_1], IHI [IHI_1], ABN [ABN_1], ph [PHONE_1], [EMAIL_1], [STREET_ADDRESS_1]. Identifies as [ETHNICITY_1]. Seen at [ORGANIZATION_1]. Leiomyosarcoma of the uterus."
+          },
+          {
+            "segment_id": "a2",
+            "text": "Review on May 10, 2023 by Dr [PERSON_2] (AHPRA [AHPRA_NUMBER_1])."
+          }
+        ],
+        "spans": [
+          {
+            "span_id": "p1",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 0,
+            "out_end": 10
+          },
+          {
+            "span_id": "b1",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 16,
+            "out_end": 33
+          },
+          {
+            "span_id": "m1",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 44,
+            "out_end": 63
+          },
+          {
+            "span_id": "i1",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 69,
+            "out_end": 76
+          },
+          {
+            "span_id": "ab",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 82,
+            "out_end": 89
+          },
+          {
+            "span_id": "ph",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 94,
+            "out_end": 103
+          },
+          {
+            "span_id": "em",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 105,
+            "out_end": 114
+          },
+          {
+            "span_id": "ad",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 116,
+            "out_end": 134
+          },
+          {
+            "span_id": "et",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 150,
+            "out_end": 163
+          },
+          {
+            "span_id": "or",
+            "segment_id": "a1",
+            "action": "mark",
+            "out_start": 173,
+            "out_end": 189
+          },
+          {
+            "span_id": "ca",
+            "segment_id": "a1",
+            "action": "keep",
+            "out_start": 191,
+            "out_end": 219
+          },
+          {
+            "span_id": "d4",
+            "segment_id": "a2",
+            "action": "shift",
+            "out_start": 10,
+            "out_end": 22
+          },
+          {
+            "span_id": "p2",
+            "segment_id": "a2",
+            "action": "mark",
+            "out_start": 29,
+            "out_end": 39
+          },
+          {
+            "span_id": "ah",
+            "segment_id": "a2",
+            "action": "mark",
+            "out_start": 47,
+            "out_end": 63
+          }
+        ],
+        "merges": []
+      }
+    },
+    {
+      "name": "merges_name_parts_keep_l1",
+      "request": {
+        "document": [
+          {
+            "segment_id": "m",
+            "text": "Ari Volk Tamsin saw Ari on 2024-02-29 (DOB 2024-02-29) in Tübingen Ωmega.",
+            "spans": [
+              {
+                "span_id": "full",
+                "start": 0,
+                "end": 15,
+                "label": "PERSON"
+              },
+              {
+                "span_id": "fn",
+                "start": 0,
+                "end": 3,
+                "label": "FIRST_NAME"
+              },
+              {
+                "span_id": "ln",
+                "start": 9,
+                "end": 15,
+                "label": "LAST_NAME"
+              },
+              {
+                "span_id": "fn2",
+                "start": 20,
+                "end": 23,
+                "label": "FIRST_NAME"
+              },
+              {
+                "span_id": "dd",
+                "start": 27,
+                "end": 37,
+                "label": "DATE"
+              },
+              {
+                "span_id": "db",
+                "start": 43,
+                "end": 53,
+                "label": "DATE_OF_BIRTH"
+              },
+              {
+                "span_id": "dx",
+                "start": 43,
+                "end": 53,
+                "label": "DATE"
+              },
+              {
+                "span_id": "lo",
+                "start": 58,
+                "end": 66,
+                "label": "LOCATION"
+              },
+              {
+                "span_id": "om",
+                "start": 67,
+                "end": 72,
+                "label": "ORGANIZATION"
+              }
+            ]
+          },
+          {
+            "segment_id": "empty",
+            "text": "",
+            "spans": []
+          },
+          {
+            "segment_id": "plain",
+            "text": "No spans here 0412 345 678.",
+            "spans": []
+          }
+        ],
+        "treatment": "mark",
+        "policy": "ccia_l1",
+        "offset_days": -400
+      },
+      "expected": {
+        "segments": [
+          {
+            "segment_id": "m",
+            "text": "[PERSON_1] saw [PERSON_FN_1] on 2023-01-25 (DOB [DATE_OF_BIRTH_1]) in Tübingen Ωmega."
+          },
+          {
+            "segment_id": "empty",
+            "text": ""
+          },
+          {
+            "segment_id": "plain",
+            "text": "No spans here 0412 345 678."
+          }
+        ],
+        "spans": [
+          {
+            "span_id": "full",
+            "segment_id": "m",
+            "action": "mark",
+            "out_start": 0,
+            "out_end": 10
+          },
+          {
+            "span_id": "fn2",
+            "segment_id": "m",
+            "action": "mark",
+            "out_start": 15,
+            "out_end": 28
+          },
+          {
+            "span_id": "dd",
+            "segment_id": "m",
+            "action": "shift",
+            "out_start": 32,
+            "out_end": 42
+          },
+          {
+            "span_id": "db",
+            "segment_id": "m",
+            "action": "mark",
+            "out_start": 48,
+            "out_end": 65
+          },
+          {
+            "span_id": "lo",
+            "segment_id": "m",
+            "action": "keep",
+            "out_start": 70,
+            "out_end": 78
+          },
+          {
+            "span_id": "om",
+            "segment_id": "m",
+            "action": "keep",
+            "out_start": 79,
+            "out_end": 84
+          }
+        ],
+        "merges": [
+          {
+            "kept_span_id": "full",
+            "merged_span_ids": [
+              "fn",
+              "ln"
+            ]
+          },
+          {
+            "kept_span_id": "db",
+            "merged_span_ids": [
+              "dx"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ids_contact_l2_no_shift",
+      "request": {
+        "document": [
+          {
+            "segment_id": "c",
+            "text": "Contact 02 9876 5432 or user qtorvel; acct 55-1209; id XK-4410.",
+            "spans": [
+              {
+                "span_id": "ph",
+                "start": 8,
+                "end": 20,
+                "label": "PHONE"
+              },
+              {
+                "span_id": "us",
+                "start": 29,
+                "end": 36,
+                "label": "USERNAME"
+              },
+              {
+                "span_id": "ac",
+                "start": 43,
+                "end": 50,
+                "label": "ACCOUNT_NUMBER"
+              },
+              {
+                "span_id": "id",
+                "start": 55,
+                "end": 62,
+                "label": "ID_NUM",
+                "subtype": "mrn"
+              }
+            ]
+          }
+        ],
+        "treatment": "mark",
+        "policy": "ccia_l2"
+      },
+      "expected": {
+        "segments": [
+          {
+            "segment_id": "c",
+            "text": "Contact [PHONE_1] or user [USERNAME_1]; acct [ACCOUNT_NUMBER_1]; id [ID_NUM_1]."
+          }
+        ],
+        "spans": [
+          {
+            "span_id": "ph",
+            "segment_id": "c",
+            "action": "mark",
+            "out_start": 8,
+            "out_end": 17
+          },
+          {
+            "span_id": "us",
+            "segment_id": "c",
+            "action": "mark",
+            "out_start": 26,
+            "out_end": 38
+          },
+          {
+            "span_id": "ac",
+            "segment_id": "c",
+            "action": "mark",
+            "out_start": 45,
+            "out_end": 63
+          },
+          {
+            "span_id": "id",
+            "segment_id": "c",
+            "action": "mark",
+            "out_start": 68,
+            "out_end": 78
+          }
+        ],
+        "merges": []
+      }
+    }
+  ]
+}

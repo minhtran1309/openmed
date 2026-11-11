@@ -55,6 +55,7 @@ def test_error_vocabulary_is_fixed() -> None:
         "PAGE_COUNT_MISMATCH",
         "REGION_OUT_OF_BOUNDS",
         "VERIFY_FAILED",
+        "SURROGATE_KEY_REQUIRED",
     )
     with pytest.raises(ValueError):
         LeanError("NOT_A_CODE")

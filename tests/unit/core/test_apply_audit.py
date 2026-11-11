@@ -158,7 +158,13 @@ def test_span_fields_carry_provenance_without_text() -> None:
     assert {d.source for d in report.detectors} == {"model", "pattern", "caller"}
     assert report.safety_sweep == {"enabled": False}
     assert report.thresholds == {}
-    assert report.residual_risk == {"keep_span_count": 0, "shift_span_count": 1}
+    assert report.residual_risk == {
+        "keep_span_count": 0,
+        "shift_span_count": 1,
+        "replace_span_count": 0,
+        "replacement_span_count": 0,
+        "generalise_span_count": 0,
+    }
 
 
 def test_merged_cluster_is_one_audit_span() -> None:

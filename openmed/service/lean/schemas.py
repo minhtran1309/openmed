@@ -41,6 +41,7 @@ ErrorCode = Literal[
     "PAGE_COUNT_MISMATCH",
     "REGION_OUT_OF_BOUNDS",
     "VERIFY_FAILED",
+    "SURROGATE_KEY_REQUIRED",
 ]
 assert tuple(ErrorCode.__args__) == ERROR_CODES  # type: ignore[attr-defined]
 
@@ -167,7 +168,10 @@ class ApplySpanIn(BaseModel):
     or UTF-16 units); callers must supply grapheme-aligned spans, since an edge
     inside a grapheme cluster is rendered as given. ``segment_id`` is
     optional and, when given, must name the enclosing segment. ``subtype`` and
-    ``replacement`` are accepted; ``replacement`` is ignored under ``mark``.
+    ``replacement`` (1 to 256 characters) are accepted. Under ``replace`` a
+    single (unmerged) span's ``replacement`` is rendered verbatim, ahead of
+    any built-in rendering; under ``mark`` it is ignored. Its content is the
+    caller's responsibility.
     ``source`` and ``score`` are copied from the detect findings into the
     audit (``sources`` and ``confidence``); rendering ignores them.
     """
@@ -178,7 +182,7 @@ class ApplySpanIn(BaseModel):
     end: StrictInt
     label: StrictStr
     subtype: StrictStr | None = None
-    replacement: StrictStr | None = None
+    replacement: StrictStr | None = Field(default=None, min_length=1, max_length=256)
     segment_id: StrictStr | None = None
     source: Literal["model", "pattern", "table-column", "manual"] | None = None
     score: float | None = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
@@ -197,10 +201,14 @@ class ApplyRequest(BaseModel):
     """Request of ``POST /v1/apply``.
 
     ``treatment`` is validated against the full vocabulary (anything else is
-    ``INVALID_REQUEST``); only ``mark`` is implemented, the rest return
-    ``UNSUPPORTED_TREATMENT``. Pass ``offset_days`` or ``patient_key`` with
-    ``secret`` when a date shift may be needed. Keys and secrets are never
-    logged or returned.
+    ``INVALID_REQUEST``); ``mark`` and ``replace`` are implemented, the rest
+    return ``UNSUPPORTED_TREATMENT``. Pass ``offset_days`` or ``patient_key``
+    with ``secret`` when a date shift may be needed under ``mark``.
+    ``replace`` always needs ``patient_key`` with ``secret``
+    (``SURROGATE_KEY_REQUIRED`` otherwise, ``offset_days`` included): they
+    derive both the date shift and the per-patient surrogates. The service
+    keeps no state. Keys, secrets, surrogates and replacement texts are never
+    logged or returned outside the rendered segments.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -230,7 +238,7 @@ class ApplySpanOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
     span_id: str
     segment_id: str
-    action: Literal["mark", "shift", "keep"]
+    action: Literal["mark", "shift", "keep", "replace", "replacement", "generalise"]
     out_start: int
     out_end: int
 

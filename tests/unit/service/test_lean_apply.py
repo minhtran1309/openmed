@@ -230,7 +230,6 @@ def _bad_span(**overrides):
         (_bad_span(start=-2), {}, "SPAN_OUT_OF_RANGE", 400),
         (_bad_span(start=3, end=1), {}, "SPAN_INVERTED", 400),
         (_bad_span(label="NOT_A_LABEL"), {}, "UNKNOWN_LABEL", 400),
-        (_bad_span(), {"treatment": "replace"}, "UNSUPPORTED_TREATMENT", 400),
         (_bad_span(), {"treatment": "generalise"}, "UNSUPPORTED_TREATMENT", 400),
         (_bad_span(), {"treatment": "keep"}, "UNSUPPORTED_TREATMENT", 400),
         (_bad_span(), {"treatment": "scramble"}, "INVALID_REQUEST", 400),
@@ -294,7 +293,8 @@ def test_logs_and_errors_never_contain_text_key_or_secret(client, caplog) -> Non
         responses.append(_apply(client, _doc(), **secrets))
         responses.append(_apply(client, _doc(), offset_days=3, **secrets))
         responses.append(_apply(client, _doc(), patient_key=SYNTHETIC_KEY))
-        responses.append(_apply(client, _doc(), treatment="replace", **secrets))
+        # ``replace`` needs patient_key with secret, never offset_days.
+        responses.append(_apply(client, _doc(), treatment="replace", offset_days=3))
         responses.append(_apply(client, _doc(), policy="nope", **secrets))
         responses.append(_apply(client, _doc(), treatment=7, **secrets))
         bad = _doc()

@@ -2,8 +2,8 @@
 
 ``apply_spans`` never detects. It takes a document (ordered segments, each
 with its text and the spans the caller recorded), resolves each span's action
-from a policy profile and renders the treatment. Only the ``mark`` treatment
-is implemented; the other treatments of the vocabulary fail closed with
+from a policy profile and renders the treatment. ``mark`` and ``replace`` are
+implemented; the other treatments of the vocabulary fail closed with
 ``UNSUPPORTED_TREATMENT``.
 
 Rendering rules under ``mark``:
@@ -30,8 +30,28 @@ input position. The cluster is rendered over its full extent with the
 strongest action of any member, so no part of a merged span survives; the
 others are reported in ``merges``.
 
+Rendering rules under ``replace`` (mt.3 E2, first match wins per cluster):
+
+1. A single-span cluster whose span carries a caller ``replacement`` renders
+   that text verbatim (action ``replacement``). A merged cluster ignores
+   member replacements.
+2. Policy ``keep`` is kept.
+3. ``shift`` on ``DATE`` and ``DATE_OF_BIRTH`` shifts as under ``mark``; a
+   date that cannot be shifted renders its tag (action ``mark``).
+4. A cluster whose labels are all in
+   :data:`~openmed.core.apply_surrogates.SURROGATE_LABELS` renders the
+   patient's surrogate (action ``replace``), or its tag when none can be
+   given (action ``mark``).
+5. Anything else renders a tag.
+
+``replace`` always requires ``patient_key`` with ``secret``
+(``SURROGATE_KEY_REQUIRED``); the service keeps no state, and cross-document
+consistency is derived from them on every call (see
+:mod:`openmed.core.apply_surrogates`).
+
 The result carries no original span text, and errors carry only a fixed code.
-Patient keys and secrets are never logged, stored or returned.
+Patient keys, secrets, surrogates and replacement texts are never logged,
+stored or returned outside the rendered segments.
 """
 
 from __future__ import annotations
@@ -44,6 +64,7 @@ from typing import Any, Final
 
 from openmed.__about__ import __version__
 
+from .apply_surrogates import SURROGATE_LABELS, PatientSurrogates, restates_source
 from .date_shift import DEFAULT_DATE_SHIFT_MAX_DAYS, stable_offset_for
 from .errors import InputError, PolicyError
 from .labels import LABEL_METADATA
@@ -55,6 +76,7 @@ from .redaction_strength import ACTION_STRENGTH
 __all__ = [
     "DATE_LABELS",
     "MARK_SHIFT_LABELS",
+    "SHIFT_LABELS_BY_TREATMENT",
     "SUPPORTED_TREATMENTS",
     "TREATMENTS",
     "ApplySpansError",
@@ -63,17 +85,30 @@ __all__ = [
 ]
 
 TREATMENTS: Final[tuple[str, ...]] = ("mark", "replace", "generalise", "keep")
-SUPPORTED_TREATMENTS: Final[tuple[str, ...]] = ("mark",)
+SUPPORTED_TREATMENTS: Final[tuple[str, ...]] = ("mark", "replace")
 DATE_LABELS: Final[frozenset[str]] = frozenset({"DATE", "DATE_OF_BIRTH"})
 # spec.md Treatment fallbacks: "dates shift under every treatment; DOB -> tag
-# under mark". Only these labels render ``shift`` under ``mark``.
-MARK_SHIFT_LABELS: Final[frozenset[str]] = frozenset({"DATE"})
+# under mark", and "DOB ... shifted under replace" (mt.3 E7). These labels
+# render ``shift`` under each treatment.
+SHIFT_LABELS_BY_TREATMENT: Final[Mapping[str, frozenset[str]]] = {
+    "mark": frozenset({"DATE"}),
+    "replace": DATE_LABELS,
+    "generalise": frozenset({"DATE"}),
+    "keep": DATE_LABELS,
+}
+MARK_SHIFT_LABELS: Final[frozenset[str]] = SHIFT_LABELS_BY_TREATMENT["mark"]
 DATE_LOCALE: Final = "en-au"
 MAX_OFFSET_DAYS: Final = 36500
 
 _ACTION_KEEP: Final = "keep"
 _ACTION_MARK: Final = "mark"
 _ACTION_SHIFT: Final = "shift"
+_ACTION_REPLACE: Final = "replace"
+_ACTION_REPLACEMENT: Final = "replacement"
+# Treatments under which a single span's caller ``replacement`` is rendered.
+_REPLACEMENT_TREATMENTS: Final[frozenset[str]] = frozenset({"replace"})
+# Treatments that render surrogates and so always need a patient key.
+_SURROGATE_TREATMENTS: Final[frozenset[str]] = frozenset({"replace"})
 
 _MESSAGES: Final[Mapping[str, str]] = {
     "INVALID_REQUEST": "The apply request is malformed. Correct it and retry.",
@@ -84,9 +119,14 @@ _MESSAGES: Final[Mapping[str, str]] = {
     "SPAN_OUT_OF_RANGE": "A span offset lies outside its segment text.",
     "SPAN_INVERTED": "A span must have start < end.",
     "UNKNOWN_LABEL": "A span label is not a canonical OpenMed label.",
-    "UNSUPPORTED_TREATMENT": "The treatment is not supported. Use 'mark'.",
+    "UNSUPPORTED_TREATMENT": (
+        "The treatment is not supported. Use 'mark' or 'replace'."
+    ),
     "DATE_SHIFT_KEY_REQUIRED": (
         "A date shift is needed. Pass offset_days or patient_key with secret."
+    ),
+    "SURROGATE_KEY_REQUIRED": (
+        "The replace treatment needs patient_key with secret, not offset_days."
     ),
 }
 
@@ -119,8 +159,9 @@ class ApplySpansResult:
         segments: ``[{segment_id, text}]`` in input order.
         spans: ``[{span_id, segment_id, action, out_start, out_end}]``
             covering every input span (directly or via merges), in segment
-            order then output offset. ``action`` is ``mark``, ``shift`` or
-            ``keep``.
+            order then output offset. ``action`` is the rendering actually
+            applied: ``mark``, ``shift``, ``keep``, ``replace`` (an openmed
+            surrogate) or ``replacement`` (the caller's text).
         merges: ``[{kept_span_id, merged_span_ids}]`` for each overlap cluster.
         provenance: ``{openmed_version, policy_fingerprint}``.
     """
@@ -154,6 +195,7 @@ class _Span:
     label: str
     policy_action: str
     index: int
+    replacement: str | None = None
 
 
 @dataclass(frozen=True)
@@ -186,18 +228,20 @@ def apply_spans(
             str), ``text`` (str) and ``spans`` (list). Each span has
             ``span_id``, ``start``, ``end`` (code-point offsets into ``text``)
             and a canonical ``label``; optional ``segment_id`` (must equal the
-            enclosing segment's), ``subtype`` and ``replacement`` (ignored
-            under ``mark``). Offsets are Python code points, not graphemes or
+            enclosing segment's), ``subtype`` and ``replacement`` (a non-empty
+            str; rendered verbatim for a single-span cluster under
+            ``replace``, ignored under ``mark``). Offsets are Python code points, not graphemes or
             UTF-16 units; callers must supply grapheme-aligned spans, since a
             span edge inside a grapheme cluster is rendered as given.
-        treatment: ``"mark"``. Any other value raises
+        treatment: ``"mark"`` or ``"replace"``. Any other value raises
             ``UNSUPPORTED_TREATMENT``, including the not-yet-implemented
-            ``replace``, ``generalise`` and ``keep``.
+            ``generalise`` and ``keep``.
         policy: Policy name or loaded ``PolicyProfile`` resolving each label's
             action.
         offset_days: Explicit non-zero day offset for date shifting.
         patient_key: Stable patient key; requires ``secret`` and excludes
-            ``offset_days``.
+            ``offset_days``. Required under ``replace``, where it also keys
+            the per-patient surrogates.
         secret: HMAC secret paired with ``patient_key``.
 
     Returns:
@@ -207,24 +251,44 @@ def apply_spans(
         ApplySpansError: With ``error_code`` ``UNSUPPORTED_TREATMENT``,
             ``UNKNOWN_POLICY``, ``INVALID_REQUEST``, ``EMPTY_DOCUMENT``,
             ``DUPLICATE_SEGMENT_ID``, ``UNKNOWN_SEGMENT_ID``,
-            ``SPAN_OUT_OF_RANGE``, ``SPAN_INVERTED``, ``UNKNOWN_LABEL`` or
-            ``DATE_SHIFT_KEY_REQUIRED``.
+            ``SPAN_OUT_OF_RANGE``, ``SPAN_INVERTED``, ``UNKNOWN_LABEL``,
+            ``DATE_SHIFT_KEY_REQUIRED`` or ``SURROGATE_KEY_REQUIRED``.
     """
     if not isinstance(treatment, str) or treatment not in SUPPORTED_TREATMENTS:
         raise ApplySpansError("UNSUPPORTED_TREATMENT")
     profile = _resolve_policy(policy)
     _validate_shift_params(offset_days, patient_key, secret)
+    surrogates: PatientSurrogates | None = None
+    if treatment in _SURROGATE_TREATMENTS:
+        if patient_key is None or secret is None:
+            raise ApplySpansError("SURROGATE_KEY_REQUIRED")
     segments = _validate_document(document, profile)
 
     clustered = [(seg_id, text, _cluster(spans)) for seg_id, text, spans in segments]
     shift_needed = any(
-        _render_action(cluster) == _ACTION_SHIFT
+        _render_action(cluster, treatment) == _ACTION_SHIFT
         for _, _, clusters in clustered
         for cluster in clusters
     )
     offset: int | None = None
     if shift_needed:
         offset = _resolve_offset(offset_days, patient_key, secret)
+    if treatment in _SURROGATE_TREATMENTS:
+        # Request-local: dropped when this call returns (mt.3 E5).
+        assert patient_key is not None and secret is not None
+        surrogates = PatientSurrogates(patient_key=patient_key, secret=secret)
+        # No surrogate may restate any source of the call (spans and merged
+        # cluster extents), under any label.
+        surrogates.reserve(
+            (text[span.start : span.end], span.label)
+            for _, text, spans in segments
+            for span in spans
+        )
+        surrogates.reserve(
+            (text[cluster.start : cluster.end], cluster.kept.label)
+            for _, text, clusters in clustered
+            for cluster in clusters
+        )
 
     numbering: dict[str, dict[str, int]] = {}
     out_segments: list[dict[str, str]] = []
@@ -239,7 +303,9 @@ def apply_spans(
             pieces.append(before)
             out_len += len(before)
             source = text[cluster.start : cluster.end]
-            action, rendered = _render(cluster, source, offset, numbering)
+            action, rendered = _render(
+                cluster, source, offset, numbering, treatment, surrogates
+            )
             pieces.append(rendered)
             out_spans.append(
                 {
@@ -362,6 +428,9 @@ def _validate_span(
         value = raw.get(optional)
         if value is not None and not isinstance(value, str):
             raise ApplySpansError("INVALID_REQUEST")
+    replacement = raw.get("replacement")
+    if replacement is not None and not replacement:
+        raise ApplySpansError("INVALID_REQUEST")
     if span_id in seen_spans:
         raise ApplySpansError("INVALID_REQUEST")
     seen_spans.add(span_id)
@@ -381,6 +450,7 @@ def _validate_span(
         label=label,
         policy_action=profile.action_for(label),
         index=len(seen_spans),
+        replacement=replacement,
     )
 
 
@@ -444,14 +514,34 @@ def _cluster(spans: list[_Span]) -> list[_Cluster]:
     return clusters
 
 
-def _render_action(cluster: _Cluster) -> str:
+def _render_action(cluster: _Cluster, treatment: str = _ACTION_MARK) -> str:
+    """Return the planned rendering for ``cluster`` (mt.3 E2, first match wins).
+
+    The planned ``shift`` and ``replace`` can still fall back to a tag when
+    the date cannot be shifted or no surrogate can be given; :func:`_render`
+    reports the action actually applied.
+    """
+    # Row 1: a single span's caller replacement (ignored under ``mark``).
+    if (
+        treatment in _REPLACEMENT_TREATMENTS
+        and not cluster.merged
+        and cluster.kept.replacement is not None
+    ):
+        return _ACTION_REPLACEMENT
+    # Row 2: policy keep.
     if cluster.policy_action == _ACTION_KEEP:
         return _ACTION_KEEP
-    # spec.md: "DOB -> tag under mark"; only DATE shifts under ``mark``.
-    # Every member must be shiftable: a DOB merged into a DATE cluster is tagged.
+    # Rows 4-5: spec.md "DOB -> tag under mark"; only DATE shifts under
+    # ``mark``, DOB also shifts under ``replace``. Every member must be
+    # shiftable: under ``mark`` a DOB merged into a DATE cluster is tagged.
     labels = {cluster.kept.label, *(span.label for span in cluster.merged)}
-    if cluster.policy_action == _ACTION_SHIFT and labels <= MARK_SHIFT_LABELS:
+    shift_labels = SHIFT_LABELS_BY_TREATMENT.get(treatment, MARK_SHIFT_LABELS)
+    if cluster.policy_action == _ACTION_SHIFT and labels <= shift_labels:
         return _ACTION_SHIFT
+    # Row 6: surrogate-capable labels under ``replace``.
+    if treatment == _ACTION_REPLACE and labels <= SURROGATE_LABELS:
+        return _ACTION_REPLACE
+    # Row 7.
     return _ACTION_MARK
 
 
@@ -460,14 +550,28 @@ def _render(
     source: str,
     offset: int | None,
     numbering: dict[str, dict[str, int]],
+    treatment: str = _ACTION_MARK,
+    surrogates: PatientSurrogates | None = None,
 ) -> tuple[str, str]:
-    action = _render_action(cluster)
+    action = _render_action(cluster, treatment)
+    if action == _ACTION_REPLACEMENT:
+        replacement = cluster.kept.replacement
+        assert replacement is not None
+        # A replacement that restates its own source removes nothing: tag it
+        # so the audit never records it as replaced.
+        if not restates_source(replacement, source, cluster.kept.label):
+            return _ACTION_REPLACEMENT, replacement
+        return _ACTION_MARK, _tag(cluster.kept.label, source, numbering)
     if action == _ACTION_KEEP:
         return _ACTION_KEEP, source
     if action == _ACTION_SHIFT and offset is not None:
         shifted = shift_full_date(source, offset)
         if shifted is not None:
             return _ACTION_SHIFT, shifted
+    if action == _ACTION_REPLACE and surrogates is not None:
+        surrogate = surrogates.surrogate(source, cluster.kept.label)
+        if surrogate is not None:
+            return _ACTION_REPLACE, surrogate
     return _ACTION_MARK, _tag(cluster.kept.label, source, numbering)
 
 
