@@ -5,9 +5,10 @@ request document and ``ApplySpansResult.to_dict()``; ``apply_spans`` itself is
 unchanged. The report carries offsets, keyed hashes, labels, actions and
 provenance only: no span text, surrogate, replacement text, context, patient
 key, secret or date-shift offset is ever recorded. For spans rendered as
-``replace`` or ``replacement`` the ``surrogate`` field is ``"hmac-sha256:"``
-plus the HMAC-SHA256, under the audit key, of the rendered value (sliced from
-the output segment), never the value itself; it is ``None`` otherwise.
+``replace``, ``replacement`` or ``generalise`` the ``surrogate`` field is
+``"hmac-sha256:"`` plus the HMAC-SHA256, under the audit key, of the rendered
+value (sliced from the output segment), never the value itself; it is
+``None`` otherwise.
 
 Join rule: segments are joined with :data:`SEGMENT_JOIN` in document order.
 ``input_hash`` is ``"hmac-sha256:"`` plus the HMAC-SHA256, under the audit

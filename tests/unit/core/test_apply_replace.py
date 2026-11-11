@@ -173,7 +173,7 @@ def _compact(value: str) -> str:
 
 
 def test_treatment_vocabulary_and_shift_labels() -> None:
-    assert SUPPORTED_TREATMENTS == ("mark", "replace")
+    assert SUPPORTED_TREATMENTS == ("mark", "replace", "generalise", "keep")
     assert SURROGATE_DOMAIN == b"openmed.apply.surrogate.v1\x00"
     assert SHIFT_LABELS_BY_TREATMENT["mark"] == frozenset({"DATE"})
     assert SHIFT_LABELS_BY_TREATMENT["generalise"] == frozenset({"DATE"})

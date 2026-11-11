@@ -215,6 +215,13 @@ class SafeHarborAttestation:
 _SHIFT_REASON: Final = (
     "Date shifting is not Safe Harbor removal; qualified expert review is required."
 )
+# A generalised address (``format_preserve``) keeps a suburb; hipaa_safe_harbor
+# never emits it for geography, so stock attestations are unchanged.
+_GEOGRAPHIC_CATEGORY: Final = "GEOGRAPHIC_SUBDIVISION"
+_GENERALISED_GEOGRAPHY_REASON: Final = (
+    "Generalised geography retains a subdivision smaller than a state; "
+    "qualified expert review is required."
+)
 
 
 def generate_safe_harbor_attestation(
@@ -236,7 +243,8 @@ def generate_safe_harbor_attestation(
     fax numbers while preserving the canonical ``PHONE`` label.
 
     A category with any ``shift`` action is a residual-risk item: date
-    shifting is not Safe Harbor removal.
+    shifting is not Safe Harbor removal. So is any ``format_preserve`` action
+    in the geographic category: a generalised address keeps a suburb.
 
     Args:
         audit_report: An ``AuditReport`` or compatible mapping.
@@ -326,6 +334,8 @@ def _category_attestation(
         )
     if action_counts.get("shift", 0):
         reasons.append(_SHIFT_REASON)
+    if category == _GEOGRAPHIC_CATEGORY and action_counts.get("format_preserve", 0):
+        reasons.append(_GENERALISED_GEOGRAPHY_REASON)
     return SafeHarborCategoryAttestation(
         ordinal=ordinal,
         category=category,

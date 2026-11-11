@@ -230,8 +230,6 @@ def _bad_span(**overrides):
         (_bad_span(start=-2), {}, "SPAN_OUT_OF_RANGE", 400),
         (_bad_span(start=3, end=1), {}, "SPAN_INVERTED", 400),
         (_bad_span(label="NOT_A_LABEL"), {}, "UNKNOWN_LABEL", 400),
-        (_bad_span(), {"treatment": "generalise"}, "UNSUPPORTED_TREATMENT", 400),
-        (_bad_span(), {"treatment": "keep"}, "UNSUPPORTED_TREATMENT", 400),
         (_bad_span(), {"treatment": "scramble"}, "INVALID_REQUEST", 400),
         (_bad_span(), {"policy": "no_such_policy"}, "UNKNOWN_POLICY", 404),
         (

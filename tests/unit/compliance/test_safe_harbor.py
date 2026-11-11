@@ -358,3 +358,44 @@ def test_shift_action_is_residual_risk() -> None:
     assert _categories(default)["DATE_ELEMENT"].residual_risk is True
     unshifted = generate_safe_harbor_attestation(_audit_report())
     assert _categories(unshifted)["DATE_ELEMENT"].residual_risk is False
+
+
+_GEOGRAPHIC_REASON = (
+    "Generalised geography retains a subdivision smaller than a state; "
+    "qualified expert review is required."
+)
+
+
+def test_generalised_geography_is_residual_risk() -> None:
+    """A generalised suburb (``format_preserve``) is not Safe Harbor removal."""
+    report = generate_safe_harbor_attestation(
+        {
+            "policy": "ccia_l3",
+            "spans": [
+                {"canonical_label": "STREET_ADDRESS", "action": "format_preserve"},
+                {"canonical_label": "PHONE", "action": "format_preserve"},
+            ],
+        },
+        any_policy=True,
+    )
+    categories = _categories(report)
+    geographic = categories["GEOGRAPHIC_SUBDIVISION"]
+
+    assert geographic.applied_action_counts == {"format_preserve": 1}
+    assert geographic.residual_risk is True
+    assert geographic.residual_risk_reason == _GEOGRAPHIC_REASON
+    # The reason is specific to geography (mt.3 E3).
+    assert categories["TELEPHONE_NUMBER"].residual_risk is False
+
+
+def test_masked_geography_has_no_generalisation_reason() -> None:
+    report = generate_safe_harbor_attestation(
+        {
+            "policy": "hipaa_safe_harbor",
+            "spans": [{"canonical_label": "STREET_ADDRESS", "action": "mask"}],
+        }
+    )
+    geographic = _categories(report)["GEOGRAPHIC_SUBDIVISION"]
+
+    assert geographic.residual_risk is False
+    assert geographic.residual_risk_reason is None

@@ -53,6 +53,8 @@ REPLACEMENT = "Synthetic Group Wording"
 # ``replace`` always needs ``patient_key`` with ``secret`` (mt.3 E8), so it
 # runs with keys only; every other treatment runs both shift variants.
 KEYED_TREATMENTS = {"replace"}
+# Apply actions whose rendered value the audit records only as a keyed hash.
+HASHED_ACTIONS = {"replace", "replacement", "generalise"}
 
 
 @pytest.fixture
@@ -219,7 +221,7 @@ def test_no_phi_in_audit_or_attestation(client, treatment, policy, shift) -> Non
     # Rendered surrogates and replacement texts may appear only in segments.
     rendered = []
     for out in body["spans"]:
-        if out["action"] in {"replace", "replacement"}:
+        if out["action"] in HASHED_ACTIONS:
             segment = next(
                 s for s in body["segments"] if s["segment_id"] == out["segment_id"]
             )
@@ -246,7 +248,7 @@ def test_no_phi_in_audit_or_attestation(client, treatment, policy, shift) -> Non
             assert value not in serialized, name
         assert not FORBIDDEN_KEYS & set(_walk_keys(body[name])), name
     for span in body["audit"]["spans"]:
-        if span["evidence"]["apply_action"] in {"replace", "replacement"}:
+        if span["evidence"]["apply_action"] in HASHED_ACTIONS:
             assert SURROGATE_HASH.fullmatch(span["surrogate"])
         else:
             assert span["surrogate"] is None

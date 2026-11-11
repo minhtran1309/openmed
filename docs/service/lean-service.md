@@ -196,8 +196,10 @@ feed the audit and never change the rendering. Labels must be
 canonical (`MEDICARE_NUMBER`, not `medicare`); anything else is
 `UNKNOWN_LABEL`.
 
-The `mark` and `replace` treatments are implemented; `generalise` and `keep`
-are accepted by the schema and return `UNSUPPORTED_TREATMENT`.
+All four treatments are implemented: `mark`, `replace`, `generalise` and
+`keep`. Any other value is `INVALID_REQUEST` at schema validation (the library
+still raises `UNSUPPORTED_TREATMENT` for it, and the code stays in the fixed
+vocabulary).
 
 Under `mark`, masked spans become `[LABEL_n]` tags. Name parts keep a `PERSON`
 prefix: `FIRST_NAME`, `MIDDLE_NAME` and `LAST_NAME` render as
@@ -222,21 +224,22 @@ surrogate; without them, or with `offset_days` instead, the request is
 `SURROGATE_KEY_REQUIRED` (400). `offset_days` together with `patient_key` stays
 `INVALID_REQUEST`.
 
-Each cluster of overlapping spans resolves by the first matching row:
+Each cluster of overlapping spans resolves by the first matching row of the
+treatment matrix (the same table covers every treatment):
 
-| # | Condition | `mark` | `replace` |
-|---|---|---|---|
-| 1 | single-span cluster with `replacement` | as rows 2-7 (ignored) | `replacement` |
-| 2 | policy action `keep` | `keep` | `keep` |
-| 4 | all labels ⊆ {`DATE`} and policy `shift` | `shift` | `shift` |
-| 5 | all labels ⊆ {`DATE_OF_BIRTH`, `DATE`} with ≥1 DOB and policy `shift` | tag | `shift` |
-| 6 | all labels are surrogate labels | tag | surrogate (`replace`) |
-| 7 | anything else | tag | tag |
+| # | Condition | `mark` | `replace` | `generalise` | `keep` |
+|---|---|---|---|---|---|
+| 1 | single-span cluster with `replacement` | as rows 2-7 (ignored, mt.2 bytes) | `replacement` | `replacement` | `keep` (source kept) for a non-date quasi-identifier; else as rows 2-7 |
+| 2 | policy action `keep`, and **not** (generalise and cancer) | `keep` | `keep` | `keep` | `keep` |
+| 3 | generalise and cancer cluster | — | — | OncoTree group → `generalise`; unmapped → `mark` | — |
+| 4 | all labels ⊆ {`DATE`} and policy `shift` | `shift` | `shift` | `shift` | `shift` |
+| 5 | all labels ⊆ {`DATE_OF_BIRTH`, `DATE`} with ≥1 DOB and policy `shift` | tag (mt.2) | `shift` | year of the shifted DOB → `generalise` | `shift` |
+| 6 | all labels are surrogate labels | tag | surrogate → `replace` | generaliser per label (see Generalise); else tag | tag |
+| 7 | anything else | tag | tag | tag | tag |
 
-Row 3 (cancer generalisation) belongs to `generalise` and is not yet
-implemented. A date that cannot be shifted (year-only, month-year,
+A date that cannot be shifted or reduced to a year (year-only, month-year,
 unparseable) renders `[DATE_n]`, or `[DATE_OF_BIRTH_n]` for a DOB, with action
-`mark` under every treatment.
+`mark` under every treatment. `generalise` and `keep` are described below.
 
 - **Surrogate labels.** `PERSON`, `FIRST_NAME`, `MIDDLE_NAME`, `LAST_NAME`,
   `EMAIL`, `PHONE`, `STREET_ADDRESS`, `LOCATION`, `ZIPCODE`, `ORGANIZATION`,
@@ -274,9 +277,12 @@ unparseable) renders `[DATE_n]`, or `[DATE_OF_BIRTH_n]` for a DOB, with action
   `replacement` is the caller's responsibility: openmed does not check it for
   other identifiers.
 - **Reported action.** `spans[].action` is the rendering actually applied:
-  `mark`, `shift`, `keep`, `replace` (an openmed surrogate) or `replacement`
-  (the caller's text). A fallback reports `mark`, never the requested
-  treatment.
+  `mark`, `shift`, `keep`, `replace` (an openmed surrogate), `replacement`
+  (the caller's text) or `generalise` (an openmed coarser value). A fallback
+  reports `mark`, never the requested treatment. There is no separate
+  `requested`/`fallback` field: the treatment is in the request and in
+  `audit.resolved_profile.treatment`, so `action` differing from the
+  treatment is the fallback signal.
 - **Consistency.** The same value gets the same surrogate for the same
   `patient_key` and `secret` in every call and every process; a different
   `patient_key` gives a different surrogate. Matching ignores case and
@@ -309,6 +315,94 @@ only (two different mobiles of one patient may share a fictional mobile across
 calls). `PERSON "Jane Citizen"` and `FIRST_NAME "Jane"` get independent
 surrogates: name-part linkage is out of scope.
 
+### Generalise
+
+`generalise` renders a coarser value where openmed can derive one safely and
+tags everything else. It needs `patient_key` with `secret` (or `offset_days`)
+only when a date shift is needed, which includes a DOB reduced to its shifted
+year; otherwise the request is `DATE_SHIFT_KEY_REQUIRED`. A document with no
+dates needs no key.
+
+Row 6 generalisers (each fails closed to the tag, action `mark`):
+
+- **`PHONE`:** a valid AU phone keeps its first two digits (`04`, `02`), or
+  `+61` and the next digit, and every later digit becomes `x`, with the
+  separators kept: `0412 345 678` → `04xx xxx xxx`, `(02) 9876 5432` →
+  `(02) xxxx xxxx`. Anything that is not a valid AU phone is tagged.
+- **`STREET_ADDRESS`, `LOCATION`:** an AU address with a street part, a
+  suburb and a state renders `<Suburb> <STATE>`, and the street and postcode
+  are dropped: `12 Smith St, Carlton VIC 3053` → `Carlton VIC`. A value that
+  is only a state renders unchanged. An address with no state, no street
+  part before the suburb, or a postal prefix (PO Box, Locked Bag) is tagged.
+  `ZIPCODE` is always tagged.
+- **`ORGANIZATION`:** its kind, from an ordered keyword table (hospital,
+  health service, clinic, medical centre, general practice, practice,
+  pathology, radiology, laboratory, pharmacy, school, university):
+  `Royal Example Hospital` → `hospital`. An unknown organisation is tagged.
+- **`DATE_OF_BIRTH`:** the four-digit year of the *shifted* DOB, so ages stay
+  consistent with the shifted document dates and the true year is not
+  restated. Plain `DATE` spans shift as under `mark`.
+- **Names, identifiers, email, URL and username** are tagged.
+- **Merged clusters** use a generaliser only when every member label shares
+  it (`STREET_ADDRESS` with `LOCATION`); otherwise the cluster is tagged.
+- **Ages.** `AGE` keeps its policy action (`keep` in every `ccia_l*`
+  profile). There is no `90+` grouping in this release.
+
+**Cancer (row 3).** Diagnoses reach `/v1/apply` from the consumer's clinical
+extraction as `CANCER`, `DISEASE` or `CONDITION`; every `ccia_l*` profile keeps
+them. Under `generalise` only, a *cancer cluster* overrides that `keep`:
+
+- A cluster is a cancer cluster when its kept label is `CANCER`, or when it is
+  `DISEASE`/`CONDITION` and its text names an OncoTree tumour type (a name at
+  level 2 or deeper, or a main type; tissue names, benign and non-malignant
+  entries never count). Any other `DISEASE`/`CONDITION` (`asthma`) is not a
+  cancer, keeps its policy action and is never generalised.
+- Matching is exact after normalisation (NFKC, case-folded, whitespace
+  collapsed, hyphens and dashes as spaces, surrounding punctuation stripped)
+  against the OncoTree `name`, then `main_type`. There is no fuzzy or
+  substring matching. An OncoTree code (`LUAD`) matches only for `CANCER` and
+  only when the surface is all upper-case alphanumeric.
+- **Level rule: one level up, capped at the main type.** A node at level 3 or
+  deeper renders its level-2 ancestor's name (`Lung Adenocarcinoma` →
+  `Non-Small Cell Lung Cancer`); a level-2 node renders its level-1 tissue
+  name; a level-1 tissue renders unchanged; a main-type hit renders its
+  tissue (`Melanoma` → `Skin`). The verbatim OncoTree name is used.
+- **Fallback.** An unmapped `CANCER`, or a surface whose OncoTree candidates
+  generalise differently (`Choriocarcinoma` under several tissues), renders
+  `[CANCER_n]` (or `[DISEASE_n]`) with action `mark`. It is never kept.
+- A caller `replacement` on a single span wins over the OncoTree lookup.
+- Under `mark`, `replace` and `keep`, cancer follows its policy action
+  (`keep`).
+- Under `generalise`, cancer generalisation applies whatever the policy's
+  action for `CANCER` is: a policy that masks `CANCER` still gets the
+  OncoTree group (or the `[CANCER_n]` tag when unmapped), not a plain tag.
+- **OncoTree snapshot.** Version `oncotree_2025_10_03`, bundled as
+  `openmed/data/oncotree/oncotree_2025_10_03.json` and read offline. OncoTree,
+  cBioPortal / Memorial Sloan Kettering (https://oncotree.mskcc.org), is
+  licensed under the Creative Commons Attribution 4.0 International License
+  (CC-BY-4.0); the snapshot is trimmed to code, name, main type, tissue, level
+  and parent. See `NOTICE`.
+
+**Caller `replacement`.** On a single (unmerged) span the text is rendered
+verbatim, ahead of every built-in rendering (generaliser, OncoTree, policy
+`keep`, date shift), and reported as `replacement`, exactly as under
+`replace`. Its content is the caller's responsibility.
+
+### Keep
+
+`keep` is not "keep everything". It keeps policy-`keep` spans and
+quasi-identifiers that carry a caller `replacement` (a quasi-identifier the
+caller keeps for trial matching, such as a `LOCATION`, `ZIPCODE` or
+`ORGANIZATION`: the source is rendered, action `keep`). The `replacement` keeps
+the source only when the label's policy class is `QUASI_IDENTIFIER` and the
+label is not `DATE` or `DATE_OF_BIRTH`. On any other label it is ignored and
+the span resolves by rows 2-7: a direct identifier (`PERSON`,
+`MEDICARE_NUMBER`, `PHONE`, `STREET_ADDRESS`...) is still tagged, and `DATE`
+and `DATE_OF_BIRTH` still shift. Otherwise `keep` tags identifiers,
+addresses, phones and organisations, and shifts dates, `DATE_OF_BIRTH`
+included. Like `generalise`, it needs a key only when a shift is needed. A
+kept quasi-identifier is a residual-risk item in the attestation.
+
 ### Audit
 
 `audit` is an openmed `AuditReport` for this render, signed with
@@ -328,15 +422,16 @@ surrogates: name-part linkage is out of scope.
   `output_length` for every segment.
 - **Spans.** One entry per rendered span (a merged overlap is one entry).
   `start`/`end` are code-point offsets into the joined output. `action` is
-  `mask` (apply's `mark`), `shift`, `keep` or `replace` (apply's `replace`
-  and `replacement`); `evidence` holds `span_id`,
+  `mask` (apply's `mark`), `shift`, `keep`, `replace` (apply's `replace`
+  and `replacement`) or `format_preserve` (apply's `generalise`); `evidence`
+  holds `span_id`,
   `segment_id`, `apply_action` and `merged_span_ids`. `sources` is the
   request `source` (or `caller`), `confidence` the request `score` (or `1.0`),
   and `threshold` is `0.0`. `text_hash` is `hmac-sha256:` plus the
   HMAC-SHA256 hex, under the audit key, of the source text covered by the span
   and its merged spans; it is keyed so short identifiers and source dates
-  cannot be brute-forced. `surrogate` is `null` except for `replace` and
-  `replacement` spans, where it is `hmac-sha256:` plus the HMAC-SHA256 hex,
+  cannot be brute-forced. `surrogate` is `null` except for `replace`,
+  `replacement` and `generalise` spans, where it is `hmac-sha256:` plus the HMAC-SHA256 hex,
   under the audit key, of the rendered value, never the value itself.
   `context` is `{}`.
 - **Profile and provenance.** `policy` is the request policy;
@@ -346,7 +441,8 @@ surrogates: name-part linkage is out of scope.
   `keep_span_count`, `shift_span_count`, `replace_span_count`,
   `replacement_span_count` and `generalise_span_count` (the last three count
   apply actions from `evidence.apply_action`).
-- **Never recorded.** Span text, surrogates and replacement texts in clear,
+- **Never recorded.** Span text, surrogates, replacement texts and
+  generalised values (including OncoTree output) in clear,
   context, the patient key, the secret, the offset days and which shift mode
   was used. A keyed and an
   explicit-offset render with the same offset give identical audits.
@@ -408,7 +504,11 @@ HIPAA Safe Harbor categories in regulatory order, each with
 the mapped labels and `residual_risk`. Spans whose label has no Safe Harbor
 category (clinical labels such as `DISEASE`) are in the audit but not counted.
 Any `keep` or `shift` action makes its category a residual-risk item: date
-shifting is not Safe Harbor removal. `source_report_hash` equals the audit's
+shifting is not Safe Harbor removal. A generalised address (`format_preserve`
+in the geographic category) is one too, with the reason "Generalised geography
+retains a subdivision smaller than a state; qualified expert review is
+required.": a suburb is not Safe Harbor removal. A caller `replacement` is
+counted as `replace`; its content is the caller's responsibility. `source_report_hash` equals the audit's
 `repro_hash`, so the attestation cannot be paired with another render. The
 attestation is evidence from one run, not a certification.
 

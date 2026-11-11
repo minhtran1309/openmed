@@ -168,10 +168,12 @@ class ApplySpanIn(BaseModel):
     or UTF-16 units); callers must supply grapheme-aligned spans, since an edge
     inside a grapheme cluster is rendered as given. ``segment_id`` is
     optional and, when given, must name the enclosing segment. ``subtype`` and
-    ``replacement`` (1 to 256 characters) are accepted. Under ``replace`` a
-    single (unmerged) span's ``replacement`` is rendered verbatim, ahead of
-    any built-in rendering; under ``mark`` it is ignored. Its content is the
-    caller's responsibility.
+    ``replacement`` (1 to 256 characters) are accepted. Under ``replace`` and
+    ``generalise`` a single (unmerged) span's ``replacement`` is rendered
+    verbatim, ahead of any built-in rendering; under ``keep`` the span's
+    source is kept only for a non-date quasi-identifier (direct identifiers
+    are still marked, dates still shift); under ``mark`` it is ignored. Its content is the caller's
+    responsibility.
     ``source`` and ``score`` are copied from the detect findings into the
     audit (``sources`` and ``confidence``); rendering ignores them.
     """
@@ -200,15 +202,18 @@ class ApplySegmentIn(BaseModel):
 class ApplyRequest(BaseModel):
     """Request of ``POST /v1/apply``.
 
-    ``treatment`` is validated against the full vocabulary (anything else is
-    ``INVALID_REQUEST``); ``mark`` and ``replace`` are implemented, the rest
-    return ``UNSUPPORTED_TREATMENT``. Pass ``offset_days`` or ``patient_key``
-    with ``secret`` when a date shift may be needed under ``mark``.
+    ``treatment`` is one of ``mark``, ``replace``, ``generalise`` and
+    ``keep``, all implemented (anything else is ``INVALID_REQUEST``). Pass
+    ``offset_days`` or ``patient_key`` with ``secret`` when a date shift may
+    be needed under ``mark``, ``generalise`` or ``keep`` (``generalise``
+    reduces a date of birth to the year of the shifted date, which needs the
+    shift too); a document with no dates needs no key.
     ``replace`` always needs ``patient_key`` with ``secret``
     (``SURROGATE_KEY_REQUIRED`` otherwise, ``offset_days`` included): they
     derive both the date shift and the per-patient surrogates. The service
-    keeps no state. Keys, secrets, surrogates and replacement texts are never
-    logged or returned outside the rendered segments.
+    keeps no state. Keys, secrets, surrogates, replacement texts and
+    generalised values are never logged or returned outside the rendered
+    segments.
     """
 
     model_config = ConfigDict(extra="forbid")
