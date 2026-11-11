@@ -93,6 +93,19 @@ l-diversity, t-closeness, and differential-privacy workflows. ARX may run as
 an optional engine or out-of-process bridge and must not become a required core
 dependency.
 
+Name: OncoTree tumour-type tree
+Source: https://oncotree.mskcc.org/api/tumorTypes/tree?version=oncotree_2025_10_03
+(project: https://github.com/cBioPortal/oncotree)
+Version: oncotree_2025_10_03 (resolved from oncotree_latest_stable; retrieved
+2026-11-11)
+Copyright: OncoTree, cBioPortal / Memorial Sloan Kettering (see source)
+License: CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)
+Usage: openmed/data/oncotree/oncotree_2025_10_03.json is a snapshot of OncoTree,
+trimmed to code/name/main type/tissue/level/parent. It is read offline by
+openmed/core/oncotree.py to generalise cancer diagnoses one level up the tree.
+No other modifications were made. scripts/fork/refresh_oncotree.py refreshes
+it; runtime code never calls the network.
+
 GPL bridge-only tools
 ---------------------
 
