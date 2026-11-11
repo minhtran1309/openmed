@@ -2070,6 +2070,32 @@ def _register_african_place_generators() -> None:
 _register_african_place_generators()
 
 
+def _register_au_surrogate_generators() -> None:
+    """Route ``en_AU`` AU identifier and phone surrogates to validator-passing shapes.
+
+    The generic path gave AU identifiers a format-shaped value that fails its
+    checksum and gave phones a non-AU shape. Each dispatcher keeps the
+    previously registered generator as its fallback for every other locale.
+    """
+
+    from .providers.au_surrogates import (
+        AU_SURROGATE_GENERATORS,
+        AustralianSurrogateDispatcher,
+    )
+
+    for canonical_label, generator in AU_SURROGATE_GENERATORS.items():
+        register_label_generator(
+            canonical_label,
+            AustralianSurrogateDispatcher(
+                generator=generator,
+                fallback=LABEL_GENERATORS[canonical_label],
+            ),
+        )
+
+
+_register_au_surrogate_generators()
+
+
 __all__ = [
     "Generator",
     "LANGUAGE_PACK_GENERATORS",

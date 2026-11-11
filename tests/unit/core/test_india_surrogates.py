@@ -198,7 +198,10 @@ def test_register_clinical_provider_applies_india_bundle_to_fresh_instances() ->
 
 def test_india_label_generators_and_day_first_locales_are_registered() -> None:
     assert LABEL_GENERATORS[L.PERSON] is _gen_india_person
-    assert LABEL_GENERATORS[L.PHONE] is _gen_india_phone
+    # The AU phone dispatcher (en_AU only) runs first and falls back to the
+    # India route for every other locale.
+    phone_generator = LABEL_GENERATORS[L.PHONE]
+    assert getattr(phone_generator, "fallback", phone_generator) is _gen_india_phone
     # African address locales dispatch first and fall back to the India route.
     street_generator = LABEL_GENERATORS[L.STREET_ADDRESS]
     assert (
