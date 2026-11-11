@@ -50,13 +50,6 @@ library, framework, model और protocol के आधिकारिक ना
 | vendor lock-in | वेंडर लॉक-इन | OpenMed के आश्वासन के लिए `कोई वेंडर लॉक-इन नहीं` लिखें। |
 | checkpoint | चेकपॉइंट | Published model checkpoint के लिए। |
 
-After reviewing any translation update, refresh and verify the section manifest:
-
-```bash
-python scripts/i18n/check_readme_drift.py --update
-python scripts/i18n/check_readme_drift.py
-```
-
 ## Documentation-specific terms
 
 | English term | Simplified Chinese (`zh`) | Hindi (`hi`) |

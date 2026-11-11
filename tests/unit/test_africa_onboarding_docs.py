@@ -8,14 +8,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_swahili_readme_is_linked_from_english_readme() -> None:
-    source = (ROOT / "README.md").read_text(encoding="utf-8")
-    translation = (ROOT / "README.sw.md").read_text(encoding="utf-8")
-
-    assert '<a href="README.sw.md">Kiswahili</a>' in source
-    assert '<a href="README.md">English</a>' in translation
-
-
 def test_africa_guide_covers_required_onboarding_paths() -> None:
     guide = (ROOT / "docs" / "africa-onboarding.md").read_text(encoding="utf-8")
 

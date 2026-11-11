@@ -573,7 +573,8 @@ def test_localized_readmes_omit_unverified_model_count():
     readmes = sorted(ROOT.glob("README*.md"))
     claims = json.loads(BRAND_CLAIMS.read_text(encoding="utf-8"))["claims"]
 
-    assert len(readmes) >= 14
+    # The fork removed the translated READMEs; README.md must still comply.
+    assert readmes
     assert claims["broader_compatible_model_count"]["status"] == "unverified"
     for path in readmes:
         content = path.read_text(encoding="utf-8")

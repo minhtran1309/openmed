@@ -93,7 +93,6 @@ GENERATOR_CHECKS = (
     ("scripts/brand/build_web_fonts.py", "--check"),
     ("scripts/brand/sync_consumers.py", "--check"),
     ("scripts/brand/render_social_assets.py", "--check"),
-    ("scripts/i18n/check_readme_drift.py", ""),
 )
 
 

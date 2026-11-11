@@ -28,7 +28,6 @@ from openmed.core.registry_slots import load_registry_state
 ROOT = Path(__file__).resolve().parents[2]
 _BRAND_CLAIMS_SCRIPT = ROOT / "scripts" / "brand" / "update_claims.py"
 _BRAND_README_SCRIPT = ROOT / "scripts" / "brand" / "update_readme_brand.py"
-_README_HASH_SCRIPT = ROOT / "scripts" / "i18n" / "check_readme_drift.py"
 
 
 def _paths(root: Path) -> dict[str, Path]:
@@ -160,7 +159,6 @@ def regenerate_surfaces(root: Path = ROOT) -> dict[str, int]:
     )
     if root.resolve() == ROOT:
         _run_governed_tool(_BRAND_README_SCRIPT, "--write")
-        _run_governed_tool(_README_HASH_SCRIPT, "--update")
     return {
         "manifest_entries": len(rows),
         "registry_keys": len(snapshot.registry_keys),
@@ -174,7 +172,6 @@ def _governed_surface_errors() -> list[str]:
     checks = (
         (_BRAND_CLAIMS_SCRIPT, ("--check",)),
         (_BRAND_README_SCRIPT, ("--check",)),
-        (_README_HASH_SCRIPT, ()),
     )
     for script, args in checks:
         completed = _run_governed_tool(script, *args, check=False)

@@ -11,23 +11,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLAIMS_PATH = REPO_ROOT / "docs/brand/system/claims.yml"
-README_FILES = (
-    "README.md",
-    "README.ar.md",
-    "README.de.md",
-    "README.es.md",
-    "README.fa.md",
-    "README.fr.md",
-    "README.hi.md",
-    "README.it.md",
-    "README.ja.md",
-    "README.nl.md",
-    "README.pt.md",
-    "README.sw.md",
-    "README.te.md",
-    "README.tr.md",
-    "README.zh-CN.md",
-)
+# This fork's README.md is project-specific (openmed_au) and carries no
+# upstream hero banner, and the translated READMEs were removed, so no
+# root README is governed by the upstream brand art and claim wording.
+README_FILES: tuple[str, ...] = ()
 
 ALT_TEXT = {
     "README.md": (
@@ -1686,7 +1673,7 @@ def main() -> int:
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print("all 15 READMEs use governed brand art and claims")
+    print(f"all {len(README_FILES)} governed READMEs use brand art and claims")
     return 0
 
 
