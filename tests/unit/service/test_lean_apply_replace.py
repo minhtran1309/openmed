@@ -127,6 +127,12 @@ def test_replace_without_key_is_surrogate_key_required(client) -> None:
     response = client.post("/v1/apply", json=payload)
     assert response.status_code == 400
     assert response.json() == {"error_code": "SURROGATE_KEY_REQUIRED"}
+    # A half key (only patient_key or only secret) is a missing key too.
+    del payload["offset_days"]
+    for half in ({"patient_key": PATIENT_KEY}, {"secret": SECRET}):
+        response = client.post("/v1/apply", json={**payload, **half})
+        assert response.status_code == 400
+        assert response.json() == {"error_code": "SURROGATE_KEY_REQUIRED"}
 
 
 @pytest.mark.parametrize("replacement", ["", "x" * 257])
@@ -239,4 +245,17 @@ def test_replacement_restating_source_is_audited_as_mask(client) -> None:
     audit_span = body["audit"]["spans"][0]
     assert audit_span["action"] == "mask"
     assert audit_span["surrogate"] is None
+    assert body["audit"]["residual_risk"]["replacement_span_count"] == 0
+
+
+def test_replacement_containing_source_is_audited_as_mask(client) -> None:
+    # Final review M3: a replacement containing its source removes nothing.
+    text = f"Seen: {NAME}."
+    span = _span("n", text, NAME, "PERSON", replacement=f"Ms {NAME.upper()} (pt)")
+    response = _apply(client, [_seg("s", text, [span])])
+    assert response.status_code == 200
+    body = response.json()
+    assert body["segments"][0]["text"] == "Seen: [PERSON_1]."
+    assert body["spans"][0]["action"] == "mark"
+    assert body["audit"]["spans"][0]["action"] == "mask"
     assert body["audit"]["residual_risk"]["replacement_span_count"] == 0

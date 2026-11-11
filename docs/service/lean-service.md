@@ -220,9 +220,10 @@ overlapping spans, the policy fingerprint, a signed `audit` and a Safe Harbor
 
 `replace` renders per-patient surrogates and the caller's `replacement` text.
 It always needs `patient_key` with `secret`, even when no span needs a
-surrogate; without them, or with `offset_days` instead, the request is
-`SURROGATE_KEY_REQUIRED` (400). `offset_days` together with `patient_key` stays
-`INVALID_REQUEST`.
+surrogate; without them, with only one of the two (a half key), or with
+`offset_days` instead, the request is `SURROGATE_KEY_REQUIRED` (400).
+`offset_days` together with `patient_key` or `secret` stays `INVALID_REQUEST`.
+Under the other treatments a half key stays `INVALID_REQUEST`.
 
 Each cluster of overlapping spans resolves by the first matching row of the
 treatment matrix (the same table covers every treatment):
@@ -271,9 +272,10 @@ unparseable) renders `[DATE_n]`, or `[DATE_OF_BIRTH_n]` for a DOB, with action
   verbatim, ahead of any built-in rendering (surrogate, policy `keep`, date
   shift), and reported as `replacement`. A merged cluster ignores every
   member's `replacement` and resolves by rows 2-7. A `replacement` that
-  normalises to its own source (ignoring case and whitespace, or layout for
-  phones and identifiers) removes nothing, so it renders the tag with action
-  `mark` and is audited as `mask`. Beyond that, the content of a
+  normalises to, or contains, its own source (ignoring case and whitespace,
+  or layout for phones and identifiers) removes nothing, so it renders the
+  tag with action `mark` and is audited as `mask`: `Ms Jane Citizen (pt)` for
+  the source `Jane Citizen` is tagged. Beyond that, the content of a
   `replacement` is the caller's responsibility: openmed does not check it for
   other identifiers.
 - **Reported action.** `spans[].action` is the rendering actually applied:
@@ -291,8 +293,8 @@ unparseable) renders `[DATE_n]`, or `[DATE_OF_BIRTH_n]` for a DOB, with action
   and `QX123456` stay two DVA numbers).
 - **Collisions.** Two different values in one call never share a surrogate,
   across all labels. A candidate that collides, equals any source value of
-  the call, or (for a name) shares a word with a source name is retried; when retries run out the span falls back to its tag with action
-  `mark`. The 30-number fictional mobile pool is the realistic case: a call
+  the call, or (for a name) shares a word with a source name is retried;
+  when retries run out the span falls back to its tag with action `mark`. The 30-number fictional mobile pool is the realistic case: a call
   with more than 30 distinct mobiles tags the excess, and fewer distinct
   mobiles can still collide and fall back.
 
@@ -309,10 +311,13 @@ rotating the audit key does not change surrogates.
 **Determinism limits.** Surrogates are stable per openmed release. A Faker
 upgrade or a generator change can change them, so release notes flag any
 Faker bump in `uv.lock`. A collision retry depends on the other values in the
-same call (another surrogate or any source value of the call), so in that
-rare case a value can get a different surrogate in another document, and the no-shared-surrogate guarantee holds within one call
-only (two different mobiles of one patient may share a fictional mobile across
-calls). `PERSON "Jane Citizen"` and `FIRST_NAME "Jane"` get independent
+same call (another surrogate or any source value of the call), so a value
+can get a different surrogate in another document. For names and identifiers
+this is rare. For a mobile it is not: with the 30-number fictional pool, the
+chance that a mobile's surrogate differs from the one it gets alone is roughly
+(N−1)/30 when a call holds N distinct mobiles (about 1 in 10 with 4 mobiles).
+The no-shared-surrogate guarantee holds within one call only (two different
+mobiles of one patient may share a fictional mobile across calls). `PERSON "Jane Citizen"` and `FIRST_NAME "Jane"` get independent
 surrogates: name-part linkage is out of scope.
 
 ### Generalise
@@ -386,7 +391,8 @@ them. Under `generalise` only, a *cancer cluster* overrides that `keep`:
 **Caller `replacement`.** On a single (unmerged) span the text is rendered
 verbatim, ahead of every built-in rendering (generaliser, OncoTree, policy
 `keep`, date shift), and reported as `replacement`, exactly as under
-`replace`. Its content is the caller's responsibility.
+`replace`, including the tag for a `replacement` that normalises to or
+contains its source. Otherwise its content is the caller's responsibility.
 
 ### Keep
 
@@ -507,8 +513,12 @@ Any `keep` or `shift` action makes its category a residual-risk item: date
 shifting is not Safe Harbor removal. A generalised address (`format_preserve`
 in the geographic category) is one too, with the reason "Generalised geography
 retains a subdivision smaller than a state; qualified expert review is
-required.": a suburb is not Safe Harbor removal. A caller `replacement` is
-counted as `replace`; its content is the caller's responsibility. `source_report_hash` equals the audit's
+required.": a suburb is not Safe Harbor removal. A generalised date of birth
+(`format_preserve` in the date category) is one too, with the reason "A
+generalised date keeps its year; ages over 89 are not grouped in this release;
+qualified expert review is required.": the year of a DOB can show an age over
+89. A caller `replacement` is counted as `replace`; its content is the
+caller's responsibility. `source_report_hash` equals the audit's
 `repro_hash`, so the attestation cannot be paired with another render. The
 attestation is evidence from one run, not a certification.
 
@@ -614,7 +624,9 @@ Errors are checked in this order:
 5. `VERIFY_FAILED` (500): any other failure. Only the exception type is
    logged.
 
-## Known gaps in mt.1
+## Known gaps in mt.3
+
+Carried over from mt.1 and mt.2:
 
 - `person_tag` and `year_tag` depend on the PII model. `date_shift` does too:
   if the model labels the full date as a date of birth, apply tags it instead
@@ -622,6 +634,40 @@ Errors are checked in this order:
 - `shift` is rendered only by `/v1/apply`. `Pipeline.redacted_text` and
   `deidentify` mask a `shift` span instead, so a date never passes through.
 - The header-field detector does not yet read the AU locale patterns.
+
+New in mt.3 (`replace`, `generalise`, `keep`):
+
+- **No name-part linkage.** `PERSON`, `FIRST_NAME`, `MIDDLE_NAME` and
+  `LAST_NAME` get surrogates independent of each other, so the surrogate of
+  `Jane` is unrelated to that of `Jane Smith`. Different layouts of one name
+  are different values: `SMITH, Jane` and `Jane Smith` get different
+  surrogates.
+- **Surrogates are stable per release only.** A Faker upgrade or an openmed
+  release that changes a generator can change every surrogate.
+- **Collision retries can change a surrogate between documents.** A retry
+  depends on the other values of the same call, so one value can get a
+  different surrogate in another document. This is rare for names and
+  identifiers.
+- **Mobile pool drift.** Mobiles come from the 30 ACMA fictional numbers. For
+  one patient, the chance that a mobile's surrogate changes between calls is
+  roughly (N−1)/30 when a call holds N distinct mobiles.
+- **Unmapped `DISEASE` is kept.** Under `generalise`, a `DISEASE` or
+  `CONDITION` span with no OncoTree match keeps its policy action (`keep`
+  under the `ccia_*` policies), so an unrecognised cancer named in a
+  `DISEASE` span stays verbatim. Only a `CANCER` span with no single OncoTree
+  group is tagged.
+- **No `90+` grouping.** Ages and DOB years over 89 are not grouped. A
+  generalised DOB keeps the shifted year, and the attestation flags it as a
+  residual risk (see Attestation). Grouping is deferred.
+- **No generic `NUT carcinoma` node.** OncoTree has only site-specific NUT
+  carcinoma nodes, so a bare `NUT carcinoma` under `generalise` renders
+  `[CANCER_n]` (action `mark`).
+- **Address residual.** Generalisation takes the segment after the street as
+  the suburb, so a name directly after a street part is taken as the suburb:
+  `12 Smith St, Zelda Quandt, VIC` renders `Zelda Quandt VIC`. Fixing this
+  needs a suburb gazetteer.
+- **Checksum-valid fakes.** AU identifier surrogates pass their validators,
+  so one may coincide with a real person's number (never the source's own).
 
 ## Releasing (maintainer)
 

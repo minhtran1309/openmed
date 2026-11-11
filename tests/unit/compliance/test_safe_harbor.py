@@ -399,3 +399,53 @@ def test_masked_geography_has_no_generalisation_reason() -> None:
 
     assert geographic.residual_risk is False
     assert geographic.residual_risk_reason is None
+
+
+_GENERALISED_DATE_REASON = (
+    "A generalised date keeps its year; ages over 89 are not grouped in this "
+    "release; qualified expert review is required."
+)
+
+
+def test_generalised_date_is_residual_risk() -> None:
+    """A generalised DOB year (``format_preserve``) can show an age over 89."""
+    report = generate_safe_harbor_attestation(
+        {
+            "policy": "ccia_l3",
+            "spans": [
+                {"canonical_label": "DATE_OF_BIRTH", "action": "format_preserve"},
+                {"canonical_label": "PHONE", "action": "format_preserve"},
+            ],
+        },
+        any_policy=True,
+    )
+    categories = _categories(report)
+    date = categories["DATE_ELEMENT"]
+
+    assert date.applied_action_counts == {"format_preserve": 1}
+    assert date.residual_risk is True
+    assert date.residual_risk_reason == _GENERALISED_DATE_REASON
+    assert categories["TELEPHONE_NUMBER"].residual_risk is False
+
+
+def test_shifted_or_masked_date_has_no_generalisation_reason() -> None:
+    shifted = generate_safe_harbor_attestation(
+        {
+            "policy": "ccia_l3",
+            "spans": [{"canonical_label": "DATE_OF_BIRTH", "action": "shift"}],
+        },
+        any_policy=True,
+    )
+    date = _categories(shifted)["DATE_ELEMENT"]
+    assert date.residual_risk_reason == (
+        "Date shifting is not Safe Harbor removal; qualified expert review is required."
+    )
+    masked = generate_safe_harbor_attestation(
+        {
+            "policy": "hipaa_safe_harbor",
+            "spans": [{"canonical_label": "DATE_OF_BIRTH", "action": "mask"}],
+        }
+    )
+    date = _categories(masked)["DATE_ELEMENT"]
+    assert date.residual_risk is False
+    assert date.residual_risk_reason is None

@@ -261,9 +261,10 @@ def apply_spans(
             and a canonical ``label``; optional ``segment_id`` (must equal the
             enclosing segment's), ``subtype`` and ``replacement`` (a non-empty
             str; rendered verbatim for a single-span cluster under
-            ``replace`` and ``generalise``; under ``keep`` the source is kept
-            for a non-date quasi-identifier only; ignored under ``mark``). Offsets are Python code points, not
-            graphemes or
+            ``replace`` and ``generalise``, unless it normalises to or
+            contains its source, which renders the tag; under ``keep`` the
+            source is kept for a non-date quasi-identifier only; ignored
+            under ``mark``). Offsets are Python code points, not graphemes or
             UTF-16 units; callers must supply grapheme-aligned spans, since a
             span edge inside a grapheme cluster is rendered as given.
         treatment: ``"mark"``, ``"replace"``, ``"generalise"`` or
@@ -273,7 +274,9 @@ def apply_spans(
         offset_days: Explicit non-zero day offset for date shifting.
         patient_key: Stable patient key; requires ``secret`` and excludes
             ``offset_days``. Required under ``replace``, where it also keys
-            the per-patient surrogates.
+            the per-patient surrogates; there a missing or half key (only
+            one of ``patient_key`` and ``secret``) is
+            ``SURROGATE_KEY_REQUIRED``.
         secret: HMAC secret paired with ``patient_key``.
 
     Returns:
@@ -289,6 +292,13 @@ def apply_spans(
     if not isinstance(treatment, str) or treatment not in SUPPORTED_TREATMENTS:
         raise ApplySpansError("UNSUPPORTED_TREATMENT")
     profile = _resolve_policy(policy)
+    if (
+        treatment in _SURROGATE_TREATMENTS
+        and offset_days is None
+        and (patient_key is None) != (secret is None)
+    ):
+        # A half key under ``replace`` is a missing key, not a malformed one.
+        raise ApplySpansError("SURROGATE_KEY_REQUIRED")
     _validate_shift_params(offset_days, patient_key, secret)
     surrogates: PatientSurrogates | None = None
     if treatment in _SURROGATE_TREATMENTS:

@@ -563,3 +563,49 @@ def test_scramble_still_unsupported() -> None:
             policy="ccia_l3",
         )
     assert excinfo.value.error_code == "UNSUPPORTED_TREATMENT"
+
+
+# ---------------------------------------------------------------------------
+# Final review M3: a replacement containing its source is a tag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "source", "replacement"),
+    [
+        ("PERSON", "Jane Citizen", "Ms Jane Citizen (pt)"),
+        ("LOCATION", "Quokkaville Reserve", "near QUOKKAVILLE  reserve"),
+        ("PHONE", "0491 570 156", "ph 0491570156"),
+    ],
+)
+def test_generalise_replacement_containing_source_renders_mark(
+    label, source, replacement
+) -> None:
+    rendered, action = _render_one(
+        label, source, "generalise", keyed=True, replacement=replacement
+    )
+    assert (rendered, action) == (f"[{label}_1]", "mark")
+
+
+@pytest.mark.parametrize(
+    ("label", "source", "replacement", "expected"),
+    [
+        # A direct identifier ignores the replacement and is tagged.
+        ("PERSON", "Jane Citizen", "Ms Jane Citizen (pt)", ("[PERSON_1]", "mark")),
+        # A quasi-identifier keeps its source by the keep ruling; the
+        # replacement text is never rendered.
+        (
+            "LOCATION",
+            "Quokkaville Reserve",
+            "near Quokkaville Reserve",
+            ("Quokkaville Reserve", "keep"),
+        ),
+    ],
+)
+def test_keep_replacement_containing_source_never_renders_replacement(
+    label, source, replacement, expected
+) -> None:
+    rendered, action = _render_one(
+        label, source, "keep", keyed=True, replacement=replacement
+    )
+    assert (rendered, action) == expected

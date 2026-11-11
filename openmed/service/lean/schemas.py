@@ -170,10 +170,11 @@ class ApplySpanIn(BaseModel):
     optional and, when given, must name the enclosing segment. ``subtype`` and
     ``replacement`` (1 to 256 characters) are accepted. Under ``replace`` and
     ``generalise`` a single (unmerged) span's ``replacement`` is rendered
-    verbatim, ahead of any built-in rendering; under ``keep`` the span's
+    verbatim, ahead of any built-in rendering, unless it normalises to or
+    contains its source, which renders the tag; under ``keep`` the span's
     source is kept only for a non-date quasi-identifier (direct identifiers
-    are still marked, dates still shift); under ``mark`` it is ignored. Its content is the caller's
-    responsibility.
+    are still marked, dates still shift); under ``mark`` it is ignored.
+    Otherwise its content is the caller's responsibility.
     ``source`` and ``score`` are copied from the detect findings into the
     audit (``sources`` and ``confidence``); rendering ignores them.
     """
@@ -209,7 +210,8 @@ class ApplyRequest(BaseModel):
     reduces a date of birth to the year of the shifted date, which needs the
     shift too); a document with no dates needs no key.
     ``replace`` always needs ``patient_key`` with ``secret``
-    (``SURROGATE_KEY_REQUIRED`` otherwise, ``offset_days`` included): they
+    (``SURROGATE_KEY_REQUIRED`` otherwise, ``offset_days`` or a half key
+    included; ``offset_days`` with any key part is ``INVALID_REQUEST``): they
     derive both the date shift and the per-patient surrogates. The service
     keeps no state. Keys, secrets, surrogates, replacement texts and
     generalised values are never logged or returned outside the rendered

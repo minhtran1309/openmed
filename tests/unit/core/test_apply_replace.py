@@ -380,12 +380,18 @@ def test_policy_keep_is_kept_under_replace() -> None:
 
 
 def test_replace_requires_patient_key() -> None:
-    for kwargs in ({}, {"offset_days": 10}, {"secret": SECRET}):
+    # A half key (only one of patient_key/secret) is a missing key too.
+    for kwargs in (
+        {},
+        {"offset_days": 10},
+        {"secret": SECRET},
+        {"patient_key": KEY_A},
+    ):
         with pytest.raises(ApplySpansError) as info:
             apply_spans(_doc(), treatment="replace", policy="ccia_l3", **kwargs)
-        expected = "INVALID_REQUEST" if "secret" in kwargs else "SURROGATE_KEY_REQUIRED"
-        assert info.value.error_code == expected
+        assert info.value.error_code == "SURROGATE_KEY_REQUIRED"
         assert SECRET not in str(info.value)
+        assert KEY_A not in str(info.value)
     with pytest.raises(ApplySpansError) as info:
         apply_spans(
             _doc(),
@@ -396,6 +402,17 @@ def test_replace_requires_patient_key() -> None:
             secret=SECRET,
         )
     assert info.value.error_code == "INVALID_REQUEST"
+    # offset_days with any key part conflicts, half key or not.
+    with pytest.raises(ApplySpansError) as info:
+        apply_spans(
+            _doc(), treatment="replace", policy="ccia_l3", offset_days=10, secret=SECRET
+        )
+    assert info.value.error_code == "INVALID_REQUEST"
+    # Outside replace a half key stays INVALID_REQUEST (mt.2 contract).
+    for treatment in ("mark", "generalise", "keep"):
+        with pytest.raises(ApplySpansError) as info:
+            apply_spans(_doc(), treatment=treatment, policy="ccia_l3", secret=SECRET)
+        assert info.value.error_code == "INVALID_REQUEST"
     # Even a document needing no surrogate requires the key (E8).
     with pytest.raises(ApplySpansError) as info:
         apply_spans([_seg("s", "no spans")], treatment="replace", policy="ccia_l3")
@@ -735,6 +752,41 @@ def test_replacement_restating_source_renders_mark(replacement) -> None:
     result = _replace(document)
     assert result.segments[0]["text"] == "Seen: [PERSON_1]."
     assert _out(result, "p")["action"] == "mark"
+
+
+@pytest.mark.parametrize(
+    ("label", "source", "replacement"),
+    [
+        ("PERSON", "Jane Citizen", "Ms Jane Citizen (pt)"),
+        ("PERSON", "Jane Citizen", "MS JANE   citizen"),
+        ("PHONE", "0491 570 156", "ph 0491570156 (mobile)"),
+        ("LOCATION", "Quokkaville Reserve", "near quokkaville reserve"),
+    ],
+)
+def test_replacement_containing_source_renders_mark(label, source, replacement) -> None:
+    """A replacement that contains its normalised source removes nothing."""
+    text = f"Seen: {source}."
+    document = [
+        _seg("s", text, [_span("p", text, source, label, replacement=replacement)])
+    ]
+    result = _replace(document)
+    assert result.segments[0]["text"] == f"Seen: [{label}_1]."
+    assert _out(result, "p")["action"] == "mark"
+    assert replacement not in result.segments[0]["text"]
+
+
+def test_replacement_not_containing_source_is_still_rendered() -> None:
+    text = "Seen: Jane Citizen."
+    document = [
+        _seg(
+            "s",
+            text,
+            [_span("p", text, "Jane Citizen", "PERSON", replacement="Jane")],
+        )
+    ]
+    result = _replace(document)
+    assert result.segments[0]["text"] == "Seen: Jane."
+    assert _out(result, "p")["action"] == "replacement"
 
 
 # ---------------------------------------------------------------------------

@@ -42,14 +42,17 @@ George Street`` never becomes ``8 George Circle``). Words are compared after
 NFKD folding with combining marks stripped and casefolding, so ``José``
 matches ``Jose``. Significant address words exclude numbers, single letters,
 unit or level markers, street-type words, state names and abbreviations, and
-postcodes; the street name, suburb and property name remain. Surrogates are checksum-valid fakes, so one
-may coincide with a real person's number; it is never the source's own.
+postcodes; the street name, suburb and property name remain. Surrogates
+are checksum-valid fakes, so one may coincide with a real person's number; it
+is never the source's own.
 
 Determinism limits (documented, not fixed): surrogates are stable per release
 (a Faker or generator change can change them); a collision retry depends on
-the other values in the same call, so in that rare case a value can get a
-different surrogate across documents; and the pool-collision guarantee holds
-within one call only. Because candidates are checked against every source
+the other values in the same call, so a value can get a different surrogate
+across documents (for names and identifiers this is rare; for a mobile, from
+the 30-number fictional pool, it is roughly (N-1)/30 when a call holds N
+distinct mobiles); and the pool-collision guarantee holds within one call
+only. Because candidates are checked against every source
 of the call, the other values of a call can force a retry and so change a
 surrogate.
 
@@ -225,11 +228,11 @@ def _address_words(value: str) -> set[str]:
 
 
 def restates_source(value: str, source: str, label: str) -> bool:
-    """Return whether ``value`` normalises to ``source``.
+    """Return whether ``value`` normalises to, or contains, ``source``.
 
     Both are compared by the label's :func:`consistency_key` and by their
-    casefolded, whitespace-collapsed text, so ``jane  CITIZEN`` restates
-    ``Jane Citizen``.
+    casefolded, whitespace-collapsed text, so ``jane  CITIZEN`` and
+    ``Ms Jane Citizen (pt)`` both restate ``Jane Citizen``.
 
     Args:
         value: A candidate rendering (a caller ``replacement``, say).
@@ -237,9 +240,14 @@ def restates_source(value: str, source: str, label: str) -> bool:
         label: The span's canonical label.
 
     Returns:
-        True when any normalised form of the two is equal.
+        True when a normalised form of ``value`` contains the same normalised
+        form of ``source`` (equality included).
     """
-    return bool(_forms(value, label) & _forms(source, label))
+    pairs = (
+        (consistency_key(value, label), consistency_key(source, label)),
+        (_text_key(value), _text_key(source)),
+    )
+    return any(src and src in val for val, src in pairs)
 
 
 def _patient_secret(patient_key: str, secret: str) -> bytes:

@@ -222,6 +222,13 @@ _GENERALISED_GEOGRAPHY_REASON: Final = (
     "Generalised geography retains a subdivision smaller than a state; "
     "qualified expert review is required."
 )
+# A generalised date (``format_preserve``, a DOB reduced to its year) keeps a
+# year that can show an age over 89; hipaa_safe_harbor never emits it.
+_DATE_CATEGORY: Final = "DATE_ELEMENT"
+_GENERALISED_DATE_REASON: Final = (
+    "A generalised date keeps its year; ages over 89 are not grouped in this "
+    "release; qualified expert review is required."
+)
 
 
 def generate_safe_harbor_attestation(
@@ -336,6 +343,8 @@ def _category_attestation(
         reasons.append(_SHIFT_REASON)
     if category == _GEOGRAPHIC_CATEGORY and action_counts.get("format_preserve", 0):
         reasons.append(_GENERALISED_GEOGRAPHY_REASON)
+    if category == _DATE_CATEGORY and action_counts.get("format_preserve", 0):
+        reasons.append(_GENERALISED_DATE_REASON)
     return SafeHarborCategoryAttestation(
         ordinal=ordinal,
         category=category,

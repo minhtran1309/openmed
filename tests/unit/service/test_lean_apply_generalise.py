@@ -283,3 +283,61 @@ def test_attestation_unflagged_when_address_tagged(client) -> None:
         if c["category"] == "GEOGRAPHIC_SUBDIVISION"
     )
     assert geographic["residual_risk"] is False
+
+
+_OLD_DOB_TEXT = "Mr Synth, DOB 14/03/1928, phone 0491 570 156."
+
+
+def _date_element(body):
+    return next(
+        c for c in body["attestation"]["categories"] if c["category"] == "DATE_ELEMENT"
+    )
+
+
+def _old_dob_document():
+    text = _OLD_DOB_TEXT
+    return [
+        _seg(
+            "s1",
+            text,
+            [
+                _span("b1", text, "14/03/1928", "DATE_OF_BIRTH"),
+                _span("p1", text, PHONE, "PHONE"),
+            ],
+        )
+    ]
+
+
+def test_attestation_flags_generalised_dob_year(client) -> None:
+    """Final review I1: a kept DOB year can show an age over 89."""
+    response = _apply(client, _old_dob_document(), treatment="generalise", **_keyed())
+    assert response.status_code == 200
+    body = response.json()
+    assert _slices(body)["b1"][1] == "generalise"
+    date = _date_element(body)
+    assert date["applied_action_counts"] == {"format_preserve": 1}
+    assert date["residual_risk"] is True
+    assert "ages over 89 are not grouped" in date["residual_risk_reason"]
+
+
+@pytest.mark.parametrize(
+    ("treatment", "counts", "risk", "reason"),
+    [
+        ("mark", {"mask": 1}, False, None),
+        (
+            "replace",
+            {"shift": 1},
+            True,
+            "Date shifting is not Safe Harbor removal; qualified expert review "
+            "is required.",
+        ),
+    ],
+)
+def test_dob_attestation_unchanged_under_mark_and_replace(
+    client, treatment, counts, risk, reason
+) -> None:
+    body = _apply(client, _old_dob_document(), treatment=treatment, **_keyed()).json()
+    date = _date_element(body)
+    assert date["applied_action_counts"] == counts
+    assert date["residual_risk"] is risk
+    assert date["residual_risk_reason"] == reason
