@@ -209,6 +209,7 @@ async def aanalyze_text(
     assert_context: bool = False,
     cache_results: bool = False,
     max_cache_entries: int = 128,
+    protect_deid_tags: bool = False,
     **pipeline_kwargs: Any,
 ) -> Union[AnalyzeResult, str, List[Dict[str, Any]]]:
     """Analyze text without blocking the current event loop."""
@@ -238,6 +239,7 @@ async def aanalyze_text(
         assert_context=assert_context,
         cache_results=cache_results,
         max_cache_entries=max_cache_entries,
+        protect_deid_tags=protect_deid_tags,
         **pipeline_kwargs,
     )
 

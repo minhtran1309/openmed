@@ -6,7 +6,7 @@ import logging
 import re
 import time
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Tuple, Union
 
 from .__about__ import __version__
 
@@ -428,6 +428,7 @@ def analyze_text(
     assert_context: bool = False,
     cache_results: bool = False,
     max_cache_entries: int = 128,
+    protect_deid_tags: bool = False,
     **pipeline_kwargs: Any,
 ) -> Union[AnalyzeResult, str, List[Dict[str, Any]]]:
     """Run token-classification or native span NER and format the predictions.
@@ -472,6 +473,13 @@ def analyze_text(
             ``metadata["clinical_context"]``. Disabled by default.
         cache_results: Whether to cache this result in the in-process LRU cache. Cached results may contain PHI, but are never saved to disk.
         max_cache_entries: Maximum number of cached results.
+        protect_deid_tags: Treat ``[LABEL_n]`` tags left by de-identification
+            (``[PERSON_1]``, ``[DATE_OF_BIRTH_2]``) as opaque. Each tag is
+            blanked to spaces of the same length before inference, so the
+            model never sees it and offsets are unchanged. Any entity that
+            overlaps a tag is dropped, not split. Entity text and the result
+            text come from the validated input, tags included. Disabled by
+            default, which leaves output identical to earlier releases.
         **pipeline_kwargs: Additional arguments passed to
             :meth:`openmed.core.models.ModelLoader.create_pipeline`.
 
@@ -536,6 +544,18 @@ def analyze_text(
         final_result = cache.get(cache_key)
         if final_result is not None:
             return final_result
+
+    # Masked after the cache lookup so the cache key sees the caller's text.
+    # With tag protection the model sees a same-length masked copy; everything
+    # reported to the caller is built from ``original_text``.
+    original_text = validated_text
+    deid_tag_spans: List[Tuple[int, int]] = []
+    if protect_deid_tags:
+        from .core.deid_tags import find_deid_tags, mask_deid_tags
+
+        deid_tag_spans = find_deid_tags(validated_text)
+        if deid_tag_spans:
+            validated_text = mask_deid_tags(validated_text)
 
     if loader is None:
         from .ner.indexing import resolve_model_record
@@ -810,6 +830,23 @@ def analyze_text(
                     continue
                 flattened_predictions.append(fragment)
 
+    def _drop_tag_overlaps(predictions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        from .core.deid_tags import overlaps_tag
+
+        return [
+            p
+            for p in predictions
+            if not (
+                isinstance(p.get("start"), int)
+                and isinstance(p.get("end"), int)
+                and overlaps_tag(p["start"], p["end"], deid_tag_spans)
+            )
+        ]
+
+    if deid_tag_spans:
+        flattened_predictions = _drop_tag_overlaps(flattened_predictions)
+        validated_text = original_text
+
     base_metadata = dict(metadata) if metadata else {}
     base_metadata.setdefault("sentence_detection", sentence_detection)
     if sentence_detection:
@@ -844,6 +881,10 @@ def analyze_text(
         except Exception as exc:  # pragma: no cover
             logger.warning("Failed to remap predictions to medical tokens: %s", exc)
             base_metadata.setdefault("medical_tokenizer", False)
+
+    if deid_tag_spans:
+        # Remapping to medical tokens can widen a span onto a neighbouring tag.
+        flattened_predictions = _drop_tag_overlaps(flattened_predictions)
 
     if assert_context and flattened_predictions:
         from .clinical.context import assert_context as attach_context
