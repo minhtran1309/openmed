@@ -51,6 +51,21 @@ REVISION="$(git rev-parse HEAD)"
 
 rm -rf dist
 python3 -m build --wheel
+
+# The OncoTree snapshot is package data outside any Python package, so only the
+# hatch file selection ships it. Refuse to release a wheel without it.
+WHEELS=(dist/*.whl)
+if [[ ${#WHEELS[@]} -ne 1 || ! -f "${WHEELS[0]}" ]]; then
+  echo "refusing to release: expected exactly one wheel in dist/" >&2
+  exit 4
+fi
+WHEEL_LISTING="$(python3 -m zipfile -l "${WHEELS[0]}")"
+if ! grep -Eq '^openmed/data/oncotree/[^/[:space:]]+\.json[[:space:]]' \
+  <<<"${WHEEL_LISTING}"; then
+  echo "refusing to release: ${WHEELS[0]} has no openmed/data/oncotree/*.json" >&2
+  exit 4
+fi
+
 docker build \
   -f docker/lean-service.Dockerfile \
   --build-arg "FORK_TAG=${TAG}" \

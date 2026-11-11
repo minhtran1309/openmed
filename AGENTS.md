@@ -137,6 +137,7 @@ This fork (branch `feat/au-pii-support`, base upstream `29ffa7005`) adds an Aust
 - **Model-free tests:** use `Pipeline(policy="ccia_l3", model_detector=stub)`, where the stub returns an empty `PredictionResult`, and `TestClient(create_app())` with `get_model_detector` overridden. See `tests/unit/core/test_au_dates.py` and `tests/unit/service/test_lean_detect.py`.
 - **Real model:** stubbed tests miss offset and model-interplay leaks, so run the real-model `/v1/selftest` before a release: `HF_HUB_OFFLINE=1`, `OPENMED_AUDIT_KEY` set, `with TestClient(create_app())` so the lifespan runs. It must report six `pass` results.
 - **Fast suite:** `-m "not slow and not fuzz"`. The known upstream failures are `test_deletion_verify` (windows ×2) and `test_grpc_generated_stubs_are_current`.
+- **Repository and remotes:** fork work lives in the private Bitbucket repository `cciacb/openmed_au`, as git remote `private`, which is the push default. The public GitHub fork (`origin`) is frozen: never push fork work, branches or tags to it. `upstream` (maziyarpanahi/openmed) is for fetching only. The GitHub Actions workflows under `.github/` do not run on Bitbucket, so run the checks they cover locally before a release: the fast suite, `ruff`, `scripts/release/check_repo_policy.py`, and `mkdocs build --strict` when the docs change.
 - **Releases:** build from a clean checkout of the tagged commit; `release_mt.sh` refuses a dirty tree. Tags are created and pushed by the repository owner only.
 
 ### Local planning material (never commit)
