@@ -146,7 +146,7 @@ def test_medicare_returns_medicare_number_au_medicare_direct_identifier(
             "Seen in Randwick NSW {v}.",
             "2031",
             "AU_POSTCODE",
-            "ZIPCODE",
+            "POSTCODE",  # en_AU display label for ZIPCODE (au_labels)
             "QUASI_IDENTIFIER",
         ),
     ],
@@ -279,13 +279,15 @@ def test_detect_nrp_phrase_is_one_span_with_policy_action(
 
 
 def test_policy_class_comes_from_label_metadata(client) -> None:
+    from openmed.core.au_labels import canonical_input_label
     from openmed.core.labels import LABEL_METADATA
 
     text = f"Home: {ADDRESS} NSW 2031. Ph {PHONE}. Medicare {MEDICARE}."
     findings = _detect(client, [_seg("s", text)]).json()["findings"]
     assert findings
     for finding in findings:
-        expected = LABEL_METADATA[finding["label"]]["policy_label"]
+        label = canonical_input_label(finding["label"])
+        expected = LABEL_METADATA[label]["policy_label"]
         assert finding["policy_class"] == expected
 
 

@@ -12,13 +12,47 @@ import logging
 from typing import Any
 
 from openmed.core.apply_spans import ApplySpansError, apply_spans
+from openmed.core.au_labels import canonical_input_label
 
 from .errors import LeanError
 from .schemas import ApplyRequest
 
 logger = logging.getLogger("openmed.service.lean")
 
-__all__ = ["apply_document"]
+__all__ = ["apply_document", "with_canonical_labels"]
+
+
+def with_canonical_labels(request: ApplyRequest) -> ApplyRequest:
+    """Return ``request`` with display labels (``POSTCODE``) made canonical.
+
+    Callers may send back the label ``/v1/detect`` showed them; rendering and
+    the audit work on canonical labels (``ZIPCODE``).
+
+    Args:
+        request: The validated apply request.
+
+    Returns:
+        The same request when no span uses a display label, otherwise a copy
+        with those labels replaced.
+    """
+    if not any(
+        canonical_input_label(span.label) != span.label
+        for segment in request.document
+        for span in segment.spans
+    ):
+        return request
+    document = [
+        segment.model_copy(
+            update={
+                "spans": [
+                    span.model_copy(update={"label": canonical_input_label(span.label)})
+                    for span in segment.spans
+                ]
+            }
+        )
+        for segment in request.document
+    ]
+    return request.model_copy(update={"document": document})
 
 
 def apply_document(request: ApplyRequest) -> dict[str, Any]:

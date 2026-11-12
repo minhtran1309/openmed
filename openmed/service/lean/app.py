@@ -28,7 +28,7 @@ from openmed.core.pipeline import ModelDetector
 from openmed.core.policy import compile_policy, verify_policy_plan
 from openmed.core.provenance import policy_fingerprint, provenance
 
-from .apply import apply_document
+from .apply import apply_document, with_canonical_labels
 from .detect import detect_segments
 from .errors import LeanError, install_error_handlers
 from .schemas import (
@@ -215,6 +215,7 @@ def apply(
             ``UNKNOWN_LABEL``, ``DATE_SHIFT_KEY_REQUIRED``,
             ``INVALID_REQUEST``, ``APPLY_FAILED`` or ``AUDIT_KEY_MISSING``.
     """
+    request = with_canonical_labels(request)
     result = apply_document(request)
     document = [segment.model_dump() for segment in request.document]
     try:

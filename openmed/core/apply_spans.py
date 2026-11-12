@@ -87,6 +87,7 @@ from typing import Any, Final
 from openmed.__about__ import __version__
 
 from .apply_surrogates import SURROGATE_LABELS, PatientSurrogates, restates_source
+from .au_labels import display_labels_for
 from .date_shift import DEFAULT_DATE_SHIFT_MAX_DAYS, stable_offset_for
 from .errors import InputError, PolicyError
 from .labels import LABEL_METADATA, QUASI_IDENTIFIER, policy_label_for
@@ -337,6 +338,8 @@ def apply_spans(
         )
 
     numbering: dict[str, dict[str, int]] = {}
+    # en_AU profiles tag ZIPCODE as [POSTCODE_n] (see ``au_labels``).
+    tag_names = {**_TAG_NAMES, **display_labels_for(profile)}
     out_segments: list[dict[str, str]] = []
     out_spans: list[dict[str, Any]] = []
     merges: list[dict[str, Any]] = []
@@ -350,7 +353,7 @@ def apply_spans(
             out_len += len(before)
             source = text[cluster.start : cluster.end]
             action, rendered = _render(
-                cluster, source, offset, numbering, treatment, surrogates
+                cluster, source, offset, numbering, treatment, surrogates, tag_names
             )
             pieces.append(rendered)
             out_spans.append(
@@ -694,6 +697,7 @@ def _render(
     numbering: dict[str, dict[str, int]],
     treatment: str = _ACTION_MARK,
     surrogates: PatientSurrogates | None = None,
+    tag_names: Mapping[str, str] | None = None,
 ) -> tuple[str, str]:
     action = _render_action(cluster, treatment, source)
     if action == _ACTION_REPLACEMENT:
@@ -703,7 +707,7 @@ def _render(
         # so the audit never records it as replaced.
         if not restates_source(replacement, source, cluster.kept.label):
             return _ACTION_REPLACEMENT, replacement
-        return _ACTION_MARK, _tag(cluster.kept.label, source, numbering)
+        return _ACTION_MARK, _tag(cluster.kept.label, source, numbering, tag_names)
     if action == _ACTION_KEEP:
         return _ACTION_KEEP, source
     if action == _ACTION_SHIFT and offset is not None:
@@ -718,7 +722,7 @@ def _render(
         generalised = _generalise(cluster, source, offset, treatment)
         if generalised is not None:
             return _ACTION_GENERALISE, generalised
-    return _ACTION_MARK, _tag(cluster.kept.label, source, numbering)
+    return _ACTION_MARK, _tag(cluster.kept.label, source, numbering, tag_names)
 
 
 # Tag text for name parts, so a split name still reads as one person's parts.
@@ -729,8 +733,13 @@ _TAG_NAMES: dict[str, str] = {
 }
 
 
-def _tag(label: str, source: str, numbering: dict[str, dict[str, int]]) -> str:
-    name = _TAG_NAMES.get(label, label)
+def _tag(
+    label: str,
+    source: str,
+    numbering: dict[str, dict[str, int]],
+    tag_names: Mapping[str, str] | None = None,
+) -> str:
+    name = (_TAG_NAMES if tag_names is None else tag_names).get(label, label)
     key = " ".join(source.split()).casefold()
     numbers = numbering.setdefault(name, {})
     number = numbers.setdefault(key, len(numbers) + 1)

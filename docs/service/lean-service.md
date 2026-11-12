@@ -121,11 +121,22 @@ The `subtype` values to map are:
 | --- | --- | --- |
 | `AU_MEDICARE`, `AU_TFN`, `AU_IHI`, `AU_ABN`, `AU_ACN` | the matching AU label | checksum identifiers |
 | `AU_PHONE`, `AU_PHONE_INSTITUTIONAL` | `PHONE` | AU phone and fax numbers |
-| `AU_ADDRESS`, `AU_STATE`, `AU_POSTCODE` | `STREET_ADDRESS`, `LOCATION`, `ZIPCODE` | AU street and postal addresses |
+| `AU_ADDRESS`, `AU_STATE`, `AU_POSTCODE` | `STREET_ADDRESS`, `LOCATION`, `POSTCODE` | AU street and postal addresses |
 | `AU_UR` | `ID_NUM` | labelled record numbers, title-line record numbers, record-number table columns |
 | `AU_HEADER` | `PERSON`, `FIRST_NAME`, `LAST_NAME`, `DATE_OF_BIRTH`, `STREET_ADDRESS` | report header values |
 | `AU_PRINT_FOOTER` | `USERNAME` | print footer user id |
 | `NRP` | `ETHNICITY` | Aboriginal and/or Torres Strait Islander status |
+
+**`POSTCODE`.** Under a policy whose `implied_locale` is `en_AU` (the `ccia_*`
+profiles), openmed's canonical `ZIPCODE` is shown as `POSTCODE`:
+
+- in `/v1/detect` findings, including table-column findings;
+- in `/v1/apply` tags (`[POSTCODE_n]`);
+- in the audit span `label`.
+
+The audit `canonical_label`, the Safe Harbor attestation `mapped_labels` and
+`/v1/policies/{name}/coverage` keep `ZIPCODE`. `/v1/apply` accepts either
+label. Other policies show `ZIPCODE` everywhere.
 | `AHPRA` | `AHPRA_NUMBER` | AHPRA registration number |
 | `AU_DVA` | `DVA_NUMBER` | DVA file number |
 | `AU_PROVIDER` | `MEDICARE_PROVIDER_NUMBER` | Medicare provider number |
@@ -339,7 +350,7 @@ Row 6 generalisers (each fails closed to the tag, action `mark`):
   are dropped: `12 Smith St, Carlton VIC 3053` → `Carlton VIC`. A value that
   is only a state renders unchanged. An address with no state, no street
   part before the suburb, or a postal prefix (PO Box, Locked Bag) is tagged.
-  `ZIPCODE` is always tagged.
+  `ZIPCODE` (`POSTCODE` under `ccia_*`) is always tagged.
 - **`ORGANIZATION`:** its kind, from an ordered keyword table (hospital,
   health service, clinic, medical centre, general practice, practice,
   pathology, radiology, laboratory, pharmacy, school, university):

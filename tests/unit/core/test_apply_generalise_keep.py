@@ -226,8 +226,9 @@ MATRIX = [
         "3053",
         {},
         "ccia_l3",
-        ("[ZIPCODE_1]", "mark"),
-        ("[ZIPCODE_1]", "mark"),
+        # en_AU profiles tag ZIPCODE as POSTCODE (au_labels).
+        ("[POSTCODE_1]", "mark"),
+        ("[POSTCODE_1]", "mark"),
     ),
     # Organisation: its kind under generalise, tag under keep.
     (

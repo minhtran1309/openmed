@@ -22,6 +22,7 @@ import threading
 from collections.abc import Mapping
 from typing import Any
 
+from openmed.core.au_labels import display_labels_for
 from openmed.core.au_records import LabelledAnchor, labelled_value_exchange
 from openmed.core.errors import PolicyError
 from openmed.core.labels import LABEL_METADATA
@@ -121,6 +122,7 @@ def _segment_findings(
     table_header: list[str] | None = None,
     cells: list[DetectCell] | None = None,
     external_anchors: Mapping[str, LabelledAnchor] | None = None,
+    display_labels: Mapping[str, str] | None = None,
 ) -> _SegmentRun:
     if not text.strip():
         return _SegmentRun([], {}, "")
@@ -147,6 +149,10 @@ def _segment_findings(
     if table_header is not None and cells is not None:
         # In addition to, not deduplicated against, model and pattern hits.
         findings.extend(table_column_findings(segment_id, text, table_header, cells))
+    if display_labels:
+        # en_AU profiles show ZIPCODE as POSTCODE (see ``au_labels``).
+        for finding in findings:
+            finding["label"] = display_labels.get(finding["label"], finding["label"])
     findings.sort(key=lambda f: (f["start"], f["end"], f["label"]))
     return _SegmentRun(findings, dict(exchange.found), result.normalized_text)
 
@@ -212,6 +218,7 @@ def detect_segments(
                     table_header=segment.table_header,
                     cells=segment.cells,
                     external_anchors=external,
+                    display_labels=display_labels_for(policy),
                 )
 
             # Pass 1: each segment on its own, collecting labelled anchors.

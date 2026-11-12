@@ -33,6 +33,7 @@ import hmac
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
+from .au_labels import display_label
 from .audit import AuditReport, AuditSpan, DetectorInfo, hash_text, manifest_hash
 from .policy import load_policy
 from .provenance import provenance
@@ -164,7 +165,7 @@ def build_apply_audit(
             AuditSpan(
                 start=base + out["out_start"],
                 end=base + out["out_end"],
-                label=kept["label"],
+                label=display_label(kept["label"], profile),
                 canonical_label=kept["label"],
                 sources=[kept.get("source") or _CALLER_SOURCE],
                 confidence=1.0 if score is None else float(score),
