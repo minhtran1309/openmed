@@ -28,7 +28,12 @@ apply renders a ``[LABEL_n]`` tag with action ``mark``, when:
   in this call, under any label, equals (normalised) *any* source value of
   the call, or, for a name label, shares a word with any source name in the
   call, or, for an address label, shares a significant word with any source
-  address in the call. The 30-number ACMA fictional mobile pool is the realistic
+  address in the call, or, for any word-valued label (names, addresses,
+  locations, organisations, emails, URLs, usernames), contains a word from
+  the call's avoid log: every source name token and significant source
+  address word, matched whole or, for three or more letters, inside a
+  candidate word (so ``NSW`` never becomes ``New Amanda`` or
+  ``Port Amandaview`` when Amanda is a name in the call). The 30-number ACMA fictional mobile pool is the realistic
   case: a call with more distinct mobiles than the pool can hold gives tags
   for the excess.
 
@@ -123,6 +128,9 @@ NAME_LABELS: Final[frozenset[str]] = frozenset(
 )
 
 ADDRESS_LABELS: Final[frozenset[str]] = frozenset({"STREET_ADDRESS", "LOCATION"})
+
+# Labels whose surrogate is words (not digits), checked against the avoid log.
+_TEXT_LABELS: Final[frozenset[str]] = SURROGATE_LABELS - _ID_LABELS - {"PHONE"}
 
 # Words that carry no identifying content in an Australian address: unit and
 # level markers, street types (AS 4590 names and common abbreviations), state
@@ -291,6 +299,11 @@ class PatientSurrogates:
         self._reserved: set[str] = set()
         self._reserved_name_tokens: set[str] = set()
         self._reserved_address_words: set[str] = set()
+        # Temporary log of real words no text surrogate may contain: every
+        # source name token and significant source address word of the call,
+        # whatever the surrogate's label. Request-scoped; dropped with the
+        # instance and never persisted or logged.
+        self._avoid_words: set[str] = set()
 
     def reserve(self, sources: Iterable[tuple[str, str]]) -> None:
         """Register source values that no surrogate may restate.
@@ -307,9 +320,13 @@ class PatientSurrogates:
         for source, label in sources:
             self._reserved |= _forms(source, label)
             if label in NAME_LABELS:
-                self._reserved_name_tokens |= _name_tokens(source)
+                tokens = _name_tokens(source)
+                self._reserved_name_tokens |= tokens
+                self._avoid_words |= {token for token in tokens if len(token) > 1}
             if label in ADDRESS_LABELS:
-                self._reserved_address_words |= _address_words(source)
+                words = _address_words(source)
+                self._reserved_address_words |= words
+                self._avoid_words |= words
 
     def _anonymizer(self, attempt: int) -> Anonymizer:
         anonymizer = self._anonymizers.get(attempt)
@@ -371,6 +388,10 @@ class PatientSurrogates:
                 _name_tokens(candidate) & self._reserved_address_words
             ):
                 return ""
+            if label in _TEXT_LABELS and _contains_avoided(
+                candidate, self._avoid_words
+            ):
+                return ""
             produced.add(candidate)
             return candidate
 
@@ -384,6 +405,21 @@ class PatientSurrogates:
         if surrogate is not None:
             self._given.add(surrogate)
         return surrogate
+
+
+def _contains_avoided(candidate: str, avoid: set[str]) -> bool:
+    """Return whether a candidate holds a real word from the avoid log.
+
+    A candidate word equal to a logged word is rejected, and so is one that
+    contains a logged word of three or more letters (``Amandaport`` holds
+    ``amanda``).
+    """
+    for token in _name_tokens(candidate):
+        if token in avoid:
+            return True
+        if any(len(word) >= 3 and word in token for word in avoid):
+            return True
+    return False
 
 
 def _restates(candidate: str, key: str, label: str) -> bool:

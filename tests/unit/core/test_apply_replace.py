@@ -898,3 +898,97 @@ def test_name_words_fold_accents(monkeypatch) -> None:
     patients = PatientSurrogates(patient_key=KEY_A, secret=SECRET)
     patients.reserve([("José Ruiz", "PERSON")])
     assert patients.surrogate("José Ruiz", "PERSON") is None
+
+
+# ---------------------------------------------------------------------------
+# One request-scoped list of real words to avoid, for every text fake
+# (regression: D15 under ccia_l2 rendered ``NSW`` as ``New Amanda``).
+# ---------------------------------------------------------------------------
+
+_AVOID_TEXT = "Amanda RAMOS lives in NSW."
+
+
+def _avoid_doc() -> list[dict]:
+    return [
+        {
+            "segment_id": "a",
+            "text": _AVOID_TEXT,
+            "spans": [
+                {"span_id": "n", "start": 0, "end": 12, "label": "PERSON"},
+                {"span_id": "l", "start": 22, "end": 25, "label": "LOCATION"},
+            ],
+        }
+    ]
+
+
+@pytest.mark.parametrize("patient", ["pk-7", "pk-50", "pk-183"])
+def test_location_fake_never_contains_a_real_name(patient) -> None:
+    result = apply_spans(
+        _avoid_doc(),
+        treatment="replace",
+        policy="ccia_l2",
+        patient_key=patient,
+        secret="demo-secret",
+    )
+    rendered = result.segments[0]["text"].split(" lives in ", 1)[1].casefold()
+    assert "amanda" not in rendered
+    assert "ramos" not in rendered
+
+
+def test_no_text_fake_contains_a_real_name_or_address_word() -> None:
+    text = (
+        "Patient Amanda RAMOS of 95 Corella Rise, Narrabri NSW 2390. "
+        "Seen by Dr Barry BROWN and Dr Megan CARTER at Narrabri Clinic; "
+        "copy to Justin ANDREWS."
+    )
+    values = [
+        ("Amanda RAMOS", "PERSON"),
+        ("95 Corella Rise", "STREET_ADDRESS"),
+        ("Narrabri", "LOCATION"),
+        ("Barry BROWN", "PERSON"),
+        ("Megan CARTER", "PERSON"),
+        ("Narrabri Clinic", "ORGANIZATION"),
+        ("Justin ANDREWS", "PERSON"),
+    ]
+    spans, cursor = [], 0
+    for index, (value, label) in enumerate(values):
+        start = text.index(value, cursor)
+        spans.append(
+            {
+                "span_id": f"s{index}",
+                "start": start,
+                "end": start + len(value),
+                "label": label,
+            }
+        )
+        cursor = start + len(value)
+    real = {
+        "amanda",
+        "ramos",
+        "corella",
+        "narrabri",
+        "barry",
+        "brown",
+        "megan",
+        "carter",
+        "justin",
+        "andrews",
+    }
+    document = [{"segment_id": "a", "text": text, "spans": spans}]
+    for patient in range(120):
+        result = apply_spans(
+            document,
+            treatment="replace",
+            policy="ccia_l2",
+            patient_key=f"pk-{patient}",
+            secret="demo-secret",
+        )
+        out = result.segments[0]["text"]
+        for span in result.spans:
+            if span["action"] != "replace":
+                continue
+            rendered = out[span["out_start"] : span["out_end"]].casefold()
+            assert not [word for word in real if word in rendered], (
+                patient,
+                span["span_id"],
+            )
